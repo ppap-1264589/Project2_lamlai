@@ -1,0 +1,10 @@
+FROM apache/superset:latest
+
+USER root
+RUN pip install psycopg2-binary --target /app/.venv/lib/python3.10/site-packages
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+USER superset
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: deezer_db
+    environment:
+      POSTGRES_DB: deezer
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d deezer"]
+      interval: 5s
+      retries: 5
+
+  scraper:
+    build: ./scraper
+    container_name: deezer_scraper
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  superset:
+    build: ./superset
+    container_name: deezer_superset
+    environment:
+      SUPERSET_SECRET_KEY: "supersecretkey123"
+    ports:
+      - "8200:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - superset_home:/app/superset_home
+
+volumes:
+  postgres_data:
+  superset_home:
