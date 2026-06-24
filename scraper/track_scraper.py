@@ -43,7 +43,8 @@ def save_tracks(cur, album_id: int, tracks: list[dict]):
         cur.execute("""
             INSERT INTO album_tracks (album_id, track_id, track_position)
             VALUES (%s, %s, %s)
-            ON CONFLICT (album_id, track_id) DO NOTHING
+            ON CONFLICT (album_id, track_id) DO UPDATE SET
+                track_position = COALESCE(album_tracks.track_position, EXCLUDED.track_position)
         """, (
             album_id,
             track["id"],

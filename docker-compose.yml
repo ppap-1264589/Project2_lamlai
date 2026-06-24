@@ -1,3 +1,19 @@
+x-scraper-service: &scraper-service
+  build:
+    context: ./scraper
+    dockerfile: dockerfile
+  image: deezer_scraper:latest
+  dns:
+    - 8.8.8.8
+    - 1.1.1.1
+  environment:
+    ARTIST_REQUESTS_PER_SECOND: "6.5"
+    USER_REQUESTS_PER_SECOND: "2.5"
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -15,19 +31,20 @@ services:
       interval: 5s
       retries: 5
 
-  scraper:
-    build: ./scraper
-    container_name: deezer_scraper
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
+  scraper_artist:
+    <<: *scraper-service
+    container_name: deezer_scraper_artist
+    command: ["python", "main.py", "artist"]
+
+  scraper_user:
+    <<: *scraper-service
+    container_name: deezer_scraper_user
+    command: ["python", "main.py", "user"]
 
   superset:
-    build: ./superset
+    build:
+      context: ./superset
+      dockerfile: dockerfile
     container_name: deezer_superset
     environment:
       SUPERSET_SECRET_KEY: "supersecretkey123"

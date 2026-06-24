@@ -45,7 +45,12 @@ def save_album(cur, album: dict):
     cur.execute("""
         INSERT INTO albums (id, title, genre_id, release_date, record_type, fans)
         VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (id) DO NOTHING
+        ON CONFLICT (id) DO UPDATE SET
+            title = COALESCE(EXCLUDED.title, albums.title),
+            genre_id = COALESCE(EXCLUDED.genre_id, albums.genre_id),
+            release_date = COALESCE(EXCLUDED.release_date, albums.release_date),
+            record_type = COALESCE(EXCLUDED.record_type, albums.record_type),
+            fans = COALESCE(EXCLUDED.fans, albums.fans)
     """, (
         album["id"],
         album["title"],
