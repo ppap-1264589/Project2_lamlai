@@ -10,6 +10,7 @@ COPY artist_scraper.py .
 COPY album_scraper.py .
 COPY track_scraper.py .
 COPY user_scraper.py .
+COPY genre_scraper.py .
 COPY coordinator_artist_scrape.py .
 COPY coordinator_user_scrape.py .
 COPY main.py .

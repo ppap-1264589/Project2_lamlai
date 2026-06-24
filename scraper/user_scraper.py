@@ -1,13 +1,13 @@
 import requests
 import time
-from config import USER_URL, USER_FAV_TRACKS, USER_RATE_LIMIT_DELAY
+from config import USER_URL, USER_FAV_TRACKS, USER_RATE_LIMIT_DELAY, HEADERS
 from psycopg2.extras import execute_values
 
 # ── Fetch ────────────────────────────────────────────────────
 
 def fetch_user(user_id: int) -> dict | None:
     """Lấy thông tin cá nhân của user. Trả về None nếu không tồn tại."""
-    resp = requests.get(USER_URL.format(id=user_id), timeout=5)
+    resp = requests.get(USER_URL.format(id=user_id), timeout=5, headers=HEADERS)
     time.sleep(USER_RATE_LIMIT_DELAY)
     data = resp.json()
     if "error" in data:
@@ -34,7 +34,7 @@ def fetch_fav_tracks(user_id: int) -> list[dict]:
     url = USER_FAV_TRACKS.format(id=user_id)
 
     while url:
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(url, timeout=5, headers=HEADERS)
         time.sleep(USER_RATE_LIMIT_DELAY)
         data = resp.json()
 

@@ -1,9 +1,9 @@
 import requests
 import time
-from config import ARTIST_URL, RATE_LIMIT_DELAY
+from config import ARTIST_URL, RATE_LIMIT_DELAY, HEADERS
 
 def fetch_artist(artist_id: int) -> dict | None:
-    resp = requests.get(ARTIST_URL.format(id=artist_id), timeout=5)
+    resp = requests.get(ARTIST_URL.format(id=artist_id), timeout=5, headers=HEADERS)
     time.sleep(RATE_LIMIT_DELAY)
     data = resp.json()
     if "error" in data:

@@ -1,13 +1,13 @@
 import requests
 import time
-from config import ARTIST_ALBUMS, ALBUM_URL, RATE_LIMIT_DELAY
+from config import ARTIST_ALBUMS, ALBUM_URL, RATE_LIMIT_DELAY, HEADERS
 
 def fetch_albums(artist_id: int) -> list[dict]:
     albums = []
     url = ARTIST_ALBUMS.format(id=artist_id)
 
     while url:
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(url, timeout=5, headers=HEADERS)
         time.sleep(RATE_LIMIT_DELAY)
         data = resp.json()
 
@@ -29,7 +29,7 @@ def fetch_albums(artist_id: int) -> list[dict]:
     return albums
 
 def fetch_contributors(album_id: int) -> list[dict]:
-    resp = requests.get(ALBUM_URL.format(id=album_id), timeout=5)
+    resp = requests.get(ALBUM_URL.format(id=album_id), timeout=5, headers=HEADERS)
     time.sleep(RATE_LIMIT_DELAY)
     data = resp.json()
 

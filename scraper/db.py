@@ -28,6 +28,13 @@ def setup_tables(conn):
         """)
 
         cur.execute("""
+            CREATE TABLE IF NOT EXISTS genres (
+                id   INT PRIMARY KEY,
+                name TEXT
+            )
+        """)
+
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS albums (
                 id           BIGINT PRIMARY KEY,
                 title        TEXT,
@@ -36,6 +43,11 @@ def setup_tables(conn):
                 record_type  TEXT,
                 fans         INT
             )
+        """)
+
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_albums_genre_id
+            ON albums (genre_id)
         """)
 
         cur.execute("""

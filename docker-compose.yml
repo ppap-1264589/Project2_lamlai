@@ -8,7 +8,8 @@ x-scraper-service: &scraper-service
     - 1.1.1.1
   environment:
     ARTIST_REQUESTS_PER_SECOND: "6.5"
-    USER_REQUESTS_PER_SECOND: "2.5"
+    USER_REQUESTS_PER_SECOND: "3"
+    GENRE_REQUESTS_PER_SECOND: "10"
   depends_on:
     postgres:
       condition: service_healthy
@@ -40,6 +41,14 @@ services:
     <<: *scraper-service
     container_name: deezer_scraper_user
     command: ["python", "main.py", "user"]
+
+  scraper_genre:
+    <<: *scraper-service
+    container_name: deezer_scraper_genre
+    command: ["python", "main.py", "genre"]
+    profiles:
+      - jobs
+    restart: "no"
 
   superset:
     build:

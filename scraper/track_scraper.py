@@ -1,13 +1,13 @@
 import requests
 import time
-from config import ALBUM_TRACKS, RATE_LIMIT_DELAY
+from config import ALBUM_TRACKS, RATE_LIMIT_DELAY, HEADERS
 
 def fetch_tracks(album_id: int) -> list[dict]:
     tracks = []
     url = ALBUM_TRACKS.format(id=album_id)
 
     while url:
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(url, timeout=5, headers=HEADERS)
         time.sleep(RATE_LIMIT_DELAY)
         data = resp.json()
 
