@@ -20,9 +20,4 @@ def save_artist(cur, artist: dict):
         INSERT INTO artists (id, name, nb_album, nb_fan)
         VALUES (%s, %s, %s, %s)
         ON CONFLICT (id) DO NOTHING
-    """, (
-        artist["id"],
-        artist["name"],
-        artist["nb_album"],
-        artist["nb_fan"],
-    ))
+    """, (artist["id"], artist["name"], artist["nb_album"], artist["nb_fan"]))

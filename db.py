@@ -12,9 +12,9 @@ def get_connection():
         password="admin",
     )
 
+
 def setup_tables(conn):
     cur = conn.cursor()
-
     try:
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (SCHEMA_SETUP_LOCK_ID,))
 
@@ -61,11 +61,18 @@ def setup_tables(conn):
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS tracks (
-                id       BIGINT PRIMARY KEY,
-                title    TEXT,
-                duration INT,
-                rank     INT
+                id           BIGINT PRIMARY KEY,
+                title        TEXT,
+                duration     INT,
+                rank         INT,
+                bpm          REAL,
+                release_date DATE
             )
+        """)
+
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tracks_pending_detail
+            ON tracks (id) WHERE bpm IS NULL
         """)
 
         cur.execute("""
@@ -74,6 +81,14 @@ def setup_tables(conn):
                 track_id       BIGINT REFERENCES tracks(id),
                 track_position INT,
                 PRIMARY KEY (album_id, track_id)
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS track_available_countries (
+                track_id BIGINT REFERENCES tracks(id),
+                country  CHAR(2),
+                PRIMARY KEY (track_id, country)
             )
         """)
 
@@ -101,12 +116,16 @@ def setup_tables(conn):
             )
         """)
 
-        # Progress riêng cho từng luồng scraper
         cur.execute("""
             CREATE TABLE IF NOT EXISTS scrape_progress (
                 scraper TEXT PRIMARY KEY,
                 last_id BIGINT NOT NULL
             )
+        """)
+
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_genres_pending
+            ON genres (id) WHERE name IS NULL
         """)
 
         conn.commit()

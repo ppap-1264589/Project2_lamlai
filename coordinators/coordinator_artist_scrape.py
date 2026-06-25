@@ -1,10 +1,8 @@
 import signal
-
-from album_scraper import fetch_albums, fetch_contributors, save_album, save_artist_album
-from artist_scraper import fetch_artist, save_artist
 from db import get_connection, setup_tables
-from track_scraper import fetch_tracks, save_tracks
-
+from scrapers.artist_scraper import fetch_artist, save_artist
+from scrapers.album_scraper import fetch_albums, fetch_contributors, save_album, save_artist_album
+from scrapers.track_scraper import fetch_tracks, save_tracks
 
 def run_artist_scrape():
     conn = get_connection()
@@ -17,8 +15,7 @@ def run_artist_scrape():
 
     cur.execute("SELECT COUNT(*) FROM artists")
     total_db = cur.fetchone()[0]
-
-    print(f"▶️  Tiếp tục từ ID {start_id} | Đang có {total_db} artists trong DB")
+    print(f"[Artist] ▶️  Tiếp tục từ ID {start_id} | Đang có {total_db} artists trong DB")
 
     session_found = 0
     artist_id = start_id
@@ -26,7 +23,7 @@ def run_artist_scrape():
 
     def handle_stop(signum, frame):
         nonlocal running
-        print("\n⛔ Nhận tín hiệu dừng...")
+        print("\n[Artist] ⛔ Nhận tín hiệu dừng...")
         running = False
 
     signal.signal(signal.SIGTERM, handle_stop)
@@ -36,37 +33,29 @@ def run_artist_scrape():
         while running:
             try:
                 artist = fetch_artist(artist_id)
-
                 if artist:
                     save_artist(cur, artist)
                     conn.commit()
 
                     albums = fetch_albums(artist_id)
-
                     for album in albums:
                         save_album(cur, album)
-
                         contributors = fetch_contributors(album["id"])
                         save_artist_album(cur, artist_id, album["id"], contributors)
-
                         tracks = fetch_tracks(album["id"])
                         save_tracks(cur, album["id"], tracks)
-
                     conn.commit()
 
                     session_found += 1
                     total_db += 1
                     print(
-                        f"[ID {artist_id}] {artist['name']} "
-                        f"— {artist['nb_fan']:,} fans "
-                        f"| {len(albums)} albums "
-                        f"| phiên này: {session_found} "
-                        f"| tổng DB: {total_db}"
+                        f"[Artist] [ID {artist_id}] {artist['name']} "
+                        f"— {artist['nb_fan']:,} fans | {len(albums)} albums "
+                        f"| phiên này: {session_found} | tổng DB: {total_db}"
                     )
-
             except Exception as e:
                 if running:
-                    print(f"  ⚠️  Lỗi ID {artist_id}: {e}")
+                    print(f"[Artist]   ⚠️  Lỗi ID {artist_id}: {e}")
                 conn.rollback()
 
             artist_id += 1
@@ -77,7 +66,7 @@ def run_artist_scrape():
             ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
         """, (artist_id,))
         conn.commit()
-        print(f"💾 Đã lưu tiến độ tại ID {artist_id}")
-        print(f"✅ Phiên này: {session_found} artists mới | Tổng DB: {total_db}")
+        print(f"[Artist] 💾 Đã lưu tiến độ tại ID {artist_id}")
+        print(f"[Artist] ✅ Phiên này: {session_found} artists | Tổng DB: {total_db}")
         cur.close()
         conn.close()
