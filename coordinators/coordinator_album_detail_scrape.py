@@ -1,21 +1,21 @@
 import asyncio
 import aiohttp
 from db import get_connection, setup_tables
-from scrapers.track_detail_scraper import (
+from scrapers.album_detail_scraper import (
     TokenBucket,
-    count_pending_tracks,
-    get_pending_track_ids,
+    count_pending_albums,
+    get_pending_album_ids,
     fetch_batch,
     save_batch,
     BATCH_SIZE,
 )
 from config import TRACK_DETAIL_REQUESTS_PER_SECOND
 
-PROGRESS_KEY = "track_detail"
+PROGRESS_KEY = "album_detail"
 CONCURRENCY  = 49
 
 
-def run_track_detail_scrape():
+def run_album_detail_scrape():
     asyncio.run(_run())
 
 
@@ -24,14 +24,13 @@ async def _run():
     setup_tables(conn)
     cur = conn.cursor()
 
-    # Event dùng để cancel fetch_batch ngay lập tức khi nhận SIGTERM/SIGINT
     stop_event = asyncio.Event()
 
     loop = asyncio.get_running_loop()
 
     def handle_stop():
-        print("\n[TrackDetail] ⛔ Nhận tín hiệu dừng...")
-        stop_event.set()  # thức dậy bất kỳ await nào đang chờ
+        print("\n[AlbumDetail] ⛔ Nhận tín hiệu dừng...", flush=True)
+        stop_event.set()
 
     import signal
     loop.add_signal_handler(signal.SIGTERM, handle_stop)
@@ -42,11 +41,11 @@ async def _run():
         row = cur.fetchone()
         last_id = row[0] if row else 0
 
-        pending = count_pending_tracks(cur)
-        print(f"[TrackDetail] pending: {pending} | tiếp từ id > {last_id}")
+        pending = count_pending_albums(cur)
+        print(f"[AlbumDetail] pending: {pending} | tiếp từ id > {last_id}", flush=True)
 
         if pending == 0:
-            print("[TrackDetail] ✅ Không có gì cần cào, thoát.")
+            print("[AlbumDetail] ✅ Không có gì cần cào, thoát.", flush=True)
             return
 
         bucket = TokenBucket(TRACK_DETAIL_REQUESTS_PER_SECOND)
@@ -57,15 +56,13 @@ async def _run():
 
         async with aiohttp.ClientSession() as session:
             while not stop_event.is_set():
-                track_ids = get_pending_track_ids(cur, last_id, BATCH_SIZE)
-                if not track_ids:
+                album_ids = get_pending_album_ids(cur, last_id, BATCH_SIZE)
+                if not album_ids:
                     completed_normally = True
                     break
 
-                # Chạy fetch_batch và stop_event.wait() song song.
-                # Hễ stop_event được set → cancel fetch ngay, không chờ hết batch.
                 fetch_task = asyncio.create_task(
-                    fetch_batch(session, track_ids, bucket, sem)
+                    fetch_batch(session, album_ids, bucket, sem)
                 )
                 stop_task = asyncio.create_task(stop_event.wait())
 
@@ -74,7 +71,6 @@ async def _run():
                     return_when=asyncio.FIRST_COMPLETED,
                 )
 
-                # Dọn task còn lại
                 for t in pending_tasks:
                     t.cancel()
                     try:
@@ -83,20 +79,15 @@ async def _run():
                         pass
 
                 if stop_event.is_set():
-                    # Nếu fetch_task cũng done kịp thì vẫn lưu kết quả
                     if fetch_task in done and not fetch_task.cancelled():
                         try:
                             results = fetch_task.result()
-                            details = []
-                            for tid, detail in zip(track_ids, results):
-                                if detail:
-                                    details.append(detail)
-                                    fetched += 1
-                                else:
-                                    not_found += 1
-                            if details:
-                                save_batch(cur, details)
-                            last_id = track_ids[-1]
+                            albums = [a for a in results if a]
+                            not_found += len(results) - len(albums)
+                            fetched += len(albums)
+                            if albums:
+                                save_batch(cur, albums)
+                            last_id = album_ids[-1]
                             cur.execute("""
                                 INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
                                 ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
@@ -104,22 +95,23 @@ async def _run():
                             conn.commit()
                         except Exception:
                             conn.rollback()
-                    break  # thoát vòng lặp, không reset
+                    break
 
-                # Trường hợp bình thường: fetch_task xong trước
                 results = fetch_task.result()
-                details = []
-                for tid, detail in zip(track_ids, results):
-                    if detail:
-                        details.append(detail)
+                albums = []
+                for aid, album in zip(album_ids, results):
+                    if album:
+                        albums.append(album)
                         fetched += 1
+                        print(f"[AlbumDetail] [{aid}] {album['title']}", flush=True)
                     else:
                         not_found += 1
+                        print(f"[AlbumDetail] [{aid}] not found", flush=True)
 
-                if details:
-                    save_batch(cur, details)
+                if albums:
+                    save_batch(cur, albums)
 
-                last_id = track_ids[-1]
+                last_id = album_ids[-1]
                 cur.execute("""
                     INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
                     ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
@@ -127,9 +119,10 @@ async def _run():
                 conn.commit()
 
                 print(
-                    f"[TrackDetail] batch xong | "
+                    f"[AlbumDetail] batch xong | "
                     f"fetched: {fetched} | not found: {not_found} | "
-                    f"last_id: {last_id}"
+                    f"last_id: {last_id}",
+                    flush=True,
                 )
 
         if completed_normally:
@@ -138,13 +131,13 @@ async def _run():
                 ON CONFLICT (scraper) DO UPDATE SET last_id = 0
             """, (PROGRESS_KEY,))
             conn.commit()
-            print(f"[TrackDetail] ✅ Hoàn thành toàn bộ | fetched: {fetched} | not found: {not_found}")
+            print(f"[AlbumDetail] ✅ Hoàn thành | fetched: {fetched} | not found: {not_found}", flush=True)
         else:
-            print(f"[TrackDetail] 💾 Dừng giữa chừng | fetched: {fetched} | not found: {not_found} | last_id giữ tại: {last_id}")
+            print(f"[AlbumDetail] 💾 Dừng giữa chừng | fetched: {fetched} | not found: {not_found} | last_id: {last_id}", flush=True)
 
     except Exception as e:
         conn.rollback()
-        print(f"[TrackDetail] ⚠️  Lỗi: {e}")
+        print(f"[AlbumDetail] ⚠️  Lỗi: {e}", flush=True)
         raise
 
     finally:

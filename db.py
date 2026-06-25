@@ -117,6 +117,24 @@ def setup_tables(conn):
         """)
 
         cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_fav_artists (
+                user_id   BIGINT REFERENCES users(id),
+                artist_id BIGINT REFERENCES artists(id),
+                time_add  TIMESTAMP,
+                PRIMARY KEY (user_id, artist_id)
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_fav_albums (
+                user_id  BIGINT REFERENCES users(id),
+                album_id BIGINT REFERENCES albums(id),
+                time_add TIMESTAMP,
+                PRIMARY KEY (user_id, album_id)
+            )
+        """)
+
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS scrape_progress (
                 scraper TEXT PRIMARY KEY,
                 last_id BIGINT NOT NULL

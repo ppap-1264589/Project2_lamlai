@@ -9,6 +9,7 @@ x-scraper-base: &scraper-base
   depends_on:
     postgres:
       condition: service_healthy
+  stop_grace_period: 60s
 
 services:
   postgres:
@@ -43,12 +44,21 @@ services:
       USER_REQUESTS_PER_SECOND: "3"
     restart: unless-stopped
 
-  scraper_genre:
+  scraper_genre_detail:
     <<: *scraper-base
     container_name: deezer_scraper_genre
     command: ["python", "main.py", "genre"]
     environment:
       GENRE_REQUESTS_PER_SECOND: "10"
+    restart: "no"
+    profiles: [jobs]
+
+  scraper_album_detail:
+    <<: *scraper-base
+    container_name: deezer_scraper_album_detail
+    command: ["python", "main.py", "album_detail"]
+    environment:
+      ALBUM_DETAIL_REQUESTS_PER_SECOND: "10"
     restart: "no"
     profiles: [jobs]
 
@@ -69,7 +79,7 @@ services:
     environment:
       SUPERSET_SECRET_KEY: "supersecretkey123"
     ports:
-      - "8200:8088"
+      - "8700:8088"
     depends_on:
       postgres:
         condition: service_healthy
