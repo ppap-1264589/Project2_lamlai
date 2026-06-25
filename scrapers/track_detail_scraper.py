@@ -2,9 +2,9 @@ import asyncio
 import time
 import aiohttp
 from psycopg2.extras import execute_values
-from config import TRACK_URL, TRACK_DETAIL_REQUESTS_PER_SECOND, HEADERS
+from config import TRACK_URL, HEADERS
 
-BATCH_SIZE = 49  # số request gửi song song mỗi lượt
+BATCH_SIZE = 49
 
 
 # ── Token Bucket rate limiter ─────────────────────────────────
@@ -37,7 +37,15 @@ async def fetch_track_detail(
     track_id: int,
     bucket: TokenBucket,
     sem: asyncio.Semaphore,
-) -> dict | None:
+) -> dict:
+    """
+    Luôn trả về dict với ít nhất {"id", "scrape_status"}.
+    scrape_status:
+      'done'      → API trả data hợp lệ, có ít nhất bpm hoặc release_date
+      'not_found' → API xác nhận ID không tồn tại
+      'no_data'   → Track tồn tại nhưng Deezer không có bpm lẫn release_date
+      'error'     → lỗi mạng / timeout
+    """
     await bucket.acquire()
     async with sem:
         try:
@@ -46,19 +54,25 @@ async def fetch_track_detail(
                 headers=HEADERS,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
+                if resp.status == 404:
+                    return {"id": track_id, "scrape_status": "not_found"}
                 if resp.status != 200:
-                    return None
+                    return {"id": track_id, "scrape_status": "error"}
                 data = await resp.json()
+
                 if "error" in data:
-                    return None
+                    return {"id": track_id, "scrape_status": "error"}
+                if not data.get("bpm") and not data.get("release_date"):
+                    return {"id": track_id, "scrape_status": "no_data"}
                 return {
-                    "id":                  data["id"],
+                    "id":                  track_id,
                     "bpm":                 data.get("bpm"),
                     "release_date":        data.get("release_date") or None,
                     "available_countries": data.get("available_countries") or [],
+                    "scrape_status":       "done",
                 }
         except Exception:
-            return None
+            return {"id": track_id, "scrape_status": "error"}
 
 
 async def fetch_batch(
@@ -66,7 +80,7 @@ async def fetch_batch(
     track_ids: list[int],
     bucket: TokenBucket,
     sem: asyncio.Semaphore,
-) -> list[dict | None]:
+) -> list[dict]:
     tasks = [fetch_track_detail(session, tid, bucket, sem) for tid in track_ids]
     return await asyncio.gather(*tasks, return_exceptions=False)
 
@@ -74,39 +88,45 @@ async def fetch_batch(
 # ── DB helpers ────────────────────────────────────────────────
 
 def count_pending_tracks(cur) -> int:
-    cur.execute("SELECT COUNT(*) FROM tracks WHERE bpm IS NULL")
+    cur.execute("""
+        SELECT COUNT(*) FROM tracks
+        WHERE scrape_status = 'pending'
+    """)
     return cur.fetchone()[0]
 
 
 def get_pending_track_ids(cur, last_id: int, limit: int) -> list[int]:
     cur.execute("""
         SELECT id FROM tracks
-        WHERE bpm IS NULL AND id > %s
+        WHERE scrape_status = 'pending' AND id > %s
         ORDER BY id
         LIMIT %s
     """, (last_id, limit))
     return [row[0] for row in cur.fetchall()]
 
 
-def save_batch(cur, details: list[dict]):
+def save_batch(cur, results: list[dict]):
     """Bulk update tracks + insert available_countries cho cả batch."""
-    if not details:
+    if not results:
         return
 
-    # UPDATE tracks — từng row vì giá trị khác nhau
-    for detail in details:
+    # UPDATE tracks — ghi status cho tất cả, kể cả not_found/error
+    for r in results:
         cur.execute("""
             UPDATE tracks
-            SET bpm          = COALESCE(%s, bpm),
-                release_date = COALESCE(%s, release_date)
+            SET bpm                 = COALESCE(%s, bpm),
+                release_date        = COALESCE(%s, release_date),
+                scrape_status       = %s,
+                scrape_attempted_at = NOW()
             WHERE id = %s
-        """, (detail["bpm"], detail["release_date"], detail["id"]))
+        """, (r.get("bpm"), r.get("release_date"), r["scrape_status"], r["id"]))
 
-    # Bulk insert available_countries
+    # Bulk insert available_countries — chỉ cho 'done'
     country_rows = [
-        (detail["id"], country)
-        for detail in details
-        for country in detail["available_countries"]
+        (r["id"], country)
+        for r in results
+        if r["scrape_status"] == "done"
+        for country in r.get("available_countries", [])
     ]
     if country_rows:
         execute_values(cur, """

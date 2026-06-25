@@ -29,25 +29,41 @@ def setup_tables(conn):
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS genres (
-                id   INT PRIMARY KEY,
-                name TEXT
+                id                  INT PRIMARY KEY,
+                name                TEXT,
+                scrape_status       TEXT NOT NULL DEFAULT 'pending',
+                scrape_attempted_at TIMESTAMPTZ
             )
         """)
 
         cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_genres_pending
+            ON genres (id)
+            WHERE scrape_status = 'pending'
+        """)
+
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS albums (
-                id           BIGINT PRIMARY KEY,
-                title        TEXT,
-                genre_id     INT,
-                release_date DATE,
-                record_type  TEXT,
-                fans         INT
+                id                  BIGINT PRIMARY KEY,
+                title               TEXT,
+                genre_id            INT,
+                release_date        DATE,
+                record_type         TEXT,
+                fans                INT,
+                scrape_status       TEXT NOT NULL DEFAULT 'pending',
+                scrape_attempted_at TIMESTAMPTZ
             )
         """)
 
         cur.execute("""
             CREATE INDEX IF NOT EXISTS idx_albums_genre_id
             ON albums (genre_id)
+        """)
+
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_albums_pending
+            ON albums (id)
+            WHERE scrape_status = 'pending'
         """)
 
         cur.execute("""
@@ -61,18 +77,21 @@ def setup_tables(conn):
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS tracks (
-                id           BIGINT PRIMARY KEY,
-                title        TEXT,
-                duration     INT,
-                rank         INT,
-                bpm          REAL,
-                release_date DATE
+                id                  BIGINT PRIMARY KEY,
+                title               TEXT,
+                duration            INT,
+                rank                INT,
+                bpm                 REAL,
+                release_date        DATE,
+                scrape_status       TEXT NOT NULL DEFAULT 'pending',
+                scrape_attempted_at TIMESTAMPTZ
             )
         """)
 
         cur.execute("""
-            CREATE INDEX IF NOT EXISTS idx_tracks_pending_detail
-            ON tracks (id) WHERE bpm IS NULL
+            CREATE INDEX IF NOT EXISTS idx_tracks_pending
+            ON tracks (id)
+            WHERE scrape_status = 'pending'
         """)
 
         cur.execute("""
@@ -139,11 +158,6 @@ def setup_tables(conn):
                 scraper TEXT PRIMARY KEY,
                 last_id BIGINT NOT NULL
             )
-        """)
-
-        cur.execute("""
-            CREATE INDEX IF NOT EXISTS idx_genres_pending
-            ON genres (id) WHERE name IS NULL
         """)
 
         conn.commit()

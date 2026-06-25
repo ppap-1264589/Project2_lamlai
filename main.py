@@ -10,7 +10,7 @@ from coordinators.coordinator_album_detail_scrape import run_album_detail_scrape
 COORDINATORS = {
     "artist":       run_artist_scrape,
     "user":         run_user_scrape,
-    "genre":        run_genre_detail_scrape,
+    "genre_detail": run_genre_detail_scrape,
     "track_detail": run_track_detail_scrape,
     "album_detail": run_album_detail_scrape,
 }

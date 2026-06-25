@@ -47,7 +47,7 @@ services:
   scraper_genre_detail:
     <<: *scraper-base
     container_name: deezer_scraper_genre
-    command: ["python", "main.py", "genre"]
+    command: ["python", "main.py", "genre_detail"]
     environment:
       GENRE_REQUESTS_PER_SECOND: "10"
     restart: "no"

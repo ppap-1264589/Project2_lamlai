@@ -25,7 +25,6 @@ async def _run():
     cur = conn.cursor()
 
     stop_event = asyncio.Event()
-
     loop = asyncio.get_running_loop()
 
     def handle_stop():
@@ -51,7 +50,7 @@ async def _run():
         bucket = TokenBucket(TRACK_DETAIL_REQUESTS_PER_SECOND)
         sem    = asyncio.Semaphore(CONCURRENCY)
 
-        fetched = not_found = 0
+        done_count = not_found = error_count = 0
         completed_normally = False
 
         async with aiohttp.ClientSession() as session:
@@ -82,45 +81,30 @@ async def _run():
                     if fetch_task in done and not fetch_task.cancelled():
                         try:
                             results = fetch_task.result()
-                            albums = [a for a in results if a]
-                            not_found += len(results) - len(albums)
-                            fetched += len(albums)
-                            if albums:
-                                save_batch(cur, albums)
+                            _tally(results, done_count, not_found, error_count)
+                            save_batch(cur, results)
                             last_id = album_ids[-1]
-                            cur.execute("""
-                                INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
-                                ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
-                            """, (PROGRESS_KEY, last_id))
+                            _save_progress(cur, PROGRESS_KEY, last_id)
                             conn.commit()
                         except Exception:
                             conn.rollback()
                     break
 
                 results = fetch_task.result()
-                albums = []
-                for aid, album in zip(album_ids, results):
-                    if album:
-                        albums.append(album)
-                        fetched += 1
-                        print(f"[AlbumDetail] [{aid}] {album['title']}", flush=True)
-                    else:
-                        not_found += 1
-                        print(f"[AlbumDetail] [{aid}] not found", flush=True)
+                for r in results:
+                    if   r["scrape_status"] == "done":      done_count  += 1
+                    elif r["scrape_status"] == "not_found": not_found   += 1
+                    else:                                   error_count += 1
+                    _log_album(r)
 
-                if albums:
-                    save_batch(cur, albums)
-
+                save_batch(cur, results)
                 last_id = album_ids[-1]
-                cur.execute("""
-                    INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
-                    ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
-                """, (PROGRESS_KEY, last_id))
+                _save_progress(cur, PROGRESS_KEY, last_id)
                 conn.commit()
 
                 print(
                     f"[AlbumDetail] batch xong | "
-                    f"fetched: {fetched} | not found: {not_found} | "
+                    f"done: {done_count} | not_found: {not_found} | error: {error_count} | "
                     f"last_id: {last_id}",
                     flush=True,
                 )
@@ -131,9 +115,18 @@ async def _run():
                 ON CONFLICT (scraper) DO UPDATE SET last_id = 0
             """, (PROGRESS_KEY,))
             conn.commit()
-            print(f"[AlbumDetail] ✅ Hoàn thành | fetched: {fetched} | not found: {not_found}", flush=True)
+            print(
+                f"[AlbumDetail] ✅ Hoàn thành | "
+                f"done: {done_count} | not_found: {not_found} | error: {error_count}",
+                flush=True,
+            )
         else:
-            print(f"[AlbumDetail] 💾 Dừng giữa chừng | fetched: {fetched} | not found: {not_found} | last_id: {last_id}", flush=True)
+            print(
+                f"[AlbumDetail] 💾 Dừng giữa chừng | "
+                f"done: {done_count} | not_found: {not_found} | error: {error_count} | "
+                f"last_id: {last_id}",
+                flush=True,
+            )
 
     except Exception as e:
         conn.rollback()
@@ -143,3 +136,28 @@ async def _run():
     finally:
         cur.close()
         conn.close()
+
+
+# ── helpers ───────────────────────────────────────────────────
+
+def _tally(results, done_count, not_found, error_count):
+    for r in results:
+        if   r["scrape_status"] == "done":      done_count  += 1
+        elif r["scrape_status"] == "not_found": not_found   += 1
+        else:                                   error_count += 1
+
+
+def _log_album(r: dict):
+    status = r["scrape_status"]
+    aid    = r["id"]
+    if status == "done":
+        print(f"[AlbumDetail] [{aid}] {r.get('title')}", flush=True)
+    else:
+        print(f"[AlbumDetail] [{aid}] {status}", flush=True)
+
+
+def _save_progress(cur, key: str, last_id: int):
+    cur.execute("""
+        INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
+        ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
+    """, (key, last_id))

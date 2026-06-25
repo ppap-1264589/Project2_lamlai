@@ -24,14 +24,12 @@ async def _run():
     setup_tables(conn)
     cur = conn.cursor()
 
-    # Event dùng để cancel fetch_batch ngay lập tức khi nhận SIGTERM/SIGINT
     stop_event = asyncio.Event()
-
     loop = asyncio.get_running_loop()
 
     def handle_stop():
         print("\n[TrackDetail] ⛔ Nhận tín hiệu dừng...")
-        stop_event.set()  # thức dậy bất kỳ await nào đang chờ
+        stop_event.set()
 
     import signal
     loop.add_signal_handler(signal.SIGTERM, handle_stop)
@@ -52,7 +50,7 @@ async def _run():
         bucket = TokenBucket(TRACK_DETAIL_REQUESTS_PER_SECOND)
         sem    = asyncio.Semaphore(CONCURRENCY)
 
-        fetched = not_found = 0
+        done_count = not_found = 0
         completed_normally = False
 
         async with aiohttp.ClientSession() as session:
@@ -62,8 +60,6 @@ async def _run():
                     completed_normally = True
                     break
 
-                # Chạy fetch_batch và stop_event.wait() song song.
-                # Hễ stop_event được set → cancel fetch ngay, không chờ hết batch.
                 fetch_task = asyncio.create_task(
                     fetch_batch(session, track_ids, bucket, sem)
                 )
@@ -74,7 +70,6 @@ async def _run():
                     return_when=asyncio.FIRST_COMPLETED,
                 )
 
-                # Dọn task còn lại
                 for t in pending_tasks:
                     t.cancel()
                     try:
@@ -83,52 +78,30 @@ async def _run():
                         pass
 
                 if stop_event.is_set():
-                    # Nếu fetch_task cũng done kịp thì vẫn lưu kết quả
                     if fetch_task in done and not fetch_task.cancelled():
                         try:
                             results = fetch_task.result()
-                            details = []
-                            for tid, detail in zip(track_ids, results):
-                                if detail:
-                                    details.append(detail)
-                                    fetched += 1
-                                else:
-                                    not_found += 1
-                            if details:
-                                save_batch(cur, details)
+                            # SỬA DÒNG NÀY:
+                            done_count, not_found = _tally(results, done_count, not_found)
+                            save_batch(cur, results)
                             last_id = track_ids[-1]
-                            cur.execute("""
-                                INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
-                                ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
-                            """, (PROGRESS_KEY, last_id))
+                            _save_progress(cur, PROGRESS_KEY, last_id)
                             conn.commit()
                         except Exception:
                             conn.rollback()
-                    break  # thoát vòng lặp, không reset
+                    break
 
-                # Trường hợp bình thường: fetch_task xong trước
                 results = fetch_task.result()
-                details = []
-                for tid, detail in zip(track_ids, results):
-                    if detail:
-                        details.append(detail)
-                        fetched += 1
-                    else:
-                        not_found += 1
-
-                if details:
-                    save_batch(cur, details)
+                done_count, not_found = _tally(results, done_count, not_found) 
+                save_batch(cur, results)
 
                 last_id = track_ids[-1]
-                cur.execute("""
-                    INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
-                    ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
-                """, (PROGRESS_KEY, last_id))
+                _save_progress(cur, PROGRESS_KEY, last_id)
                 conn.commit()
 
                 print(
                     f"[TrackDetail] batch xong | "
-                    f"fetched: {fetched} | not found: {not_found} | "
+                    f"done: {done_count} | not_found: {not_found} | "
                     f"last_id: {last_id}"
                 )
 
@@ -138,9 +111,9 @@ async def _run():
                 ON CONFLICT (scraper) DO UPDATE SET last_id = 0
             """, (PROGRESS_KEY,))
             conn.commit()
-            print(f"[TrackDetail] ✅ Hoàn thành toàn bộ | fetched: {fetched} | not found: {not_found}")
+            print(f"[TrackDetail] ✅ Hoàn thành toàn bộ | done: {done_count} | not_found: {not_found}")
         else:
-            print(f"[TrackDetail] 💾 Dừng giữa chừng | fetched: {fetched} | not found: {not_found} | last_id giữ tại: {last_id}")
+            print(f"[TrackDetail] 💾 Dừng giữa chừng | done: {done_count} | not_found: {not_found} | last_id giữ tại: {last_id}")
 
     except Exception as e:
         conn.rollback()
@@ -150,3 +123,23 @@ async def _run():
     finally:
         cur.close()
         conn.close()
+
+
+# ── helpers ───────────────────────────────────────────────────
+
+def _tally(results: list[dict], done_count: int, not_found: int) -> tuple[int, int]:
+    for r in results:
+        if r["scrape_status"] == "done":
+            done_count += 1
+        else:
+            not_found  += 1
+            
+    # Bắt buộc phải return lại 2 giá trị này
+    return done_count, not_found
+
+
+def _save_progress(cur, key: str, last_id: int):
+    cur.execute("""
+        INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
+        ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
+    """, (key, last_id))

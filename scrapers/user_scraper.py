@@ -10,7 +10,7 @@ def fetch_user(user_id: int) -> dict | None:
     if "error" in data:
         return None
     return {
-        "id":        data["id"],
+        "id":        user_id,
         "name":      data.get("name"),
         "lastname":  data.get("lastname"),
         "firstname": data.get("firstname"),

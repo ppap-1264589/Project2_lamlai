@@ -26,7 +26,6 @@ async def _run():
     cur = conn.cursor()
 
     stop_event = asyncio.Event()
-
     loop = asyncio.get_running_loop()
 
     def handle_stop():
@@ -43,7 +42,7 @@ async def _run():
 
         cur.execute("SELECT last_id FROM scrape_progress WHERE scraper = %s", (PROGRESS_KEY,))
         row = cur.fetchone()
-        last_id = row[0] if row else 0
+        last_id = -100 if row[0] == 0 else row[0]
 
         pending = count_pending_genres(cur)
         print(f"[Genre] pending: {pending} | synced mới: {inserted} | tiếp từ id > {last_id}")
@@ -55,7 +54,7 @@ async def _run():
         bucket = TokenBucket(TRACK_DETAIL_REQUESTS_PER_SECOND)
         sem    = asyncio.Semaphore(CONCURRENCY)
 
-        fetched = not_found = 0
+        done_count = not_found = error_count = 0
         completed_normally = False
 
         async with aiohttp.ClientSession() as session:
@@ -86,42 +85,30 @@ async def _run():
                     if fetch_task in done and not fetch_task.cancelled():
                         try:
                             results = fetch_task.result()
-                            for gid, genre in zip(genre_ids, results):
-                                if genre:
-                                    save_genre(cur, genre)
-                                    fetched += 1
-                                else:
-                                    not_found += 1
+                            for r in results:
+                                save_genre(cur, r)
                             last_id = genre_ids[-1]
-                            cur.execute("""
-                                INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
-                                ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
-                            """, (PROGRESS_KEY, last_id))
+                            _save_progress(cur, PROGRESS_KEY, last_id)
                             conn.commit()
                         except Exception:
                             conn.rollback()
                     break
 
                 results = fetch_task.result()
-                for gid, genre in zip(genre_ids, results):
-                    if genre:
-                        save_genre(cur, genre)
-                        fetched += 1
-                        print(f"[Genre] [{gid}] {genre['name']}")
-                    else:
-                        not_found += 1
-                        print(f"[Genre] [{gid}] not found")
+                for gid, r in zip(genre_ids, results):
+                    if   r["scrape_status"] == "done":      done_count  += 1
+                    elif r["scrape_status"] == "not_found": not_found   += 1
+                    else:                                   error_count += 1
+                    _log_genre(r)
+                    save_genre(cur, r)
 
                 last_id = genre_ids[-1]
-                cur.execute("""
-                    INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
-                    ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
-                """, (PROGRESS_KEY, last_id))
+                _save_progress(cur, PROGRESS_KEY, last_id)
                 conn.commit()
 
                 print(
                     f"[Genre] batch xong | "
-                    f"fetched: {fetched} | not found: {not_found} | "
+                    f"done: {done_count} | not_found: {not_found} | error: {error_count} | "
                     f"last_id: {last_id}"
                 )
 
@@ -131,9 +118,9 @@ async def _run():
                 ON CONFLICT (scraper) DO UPDATE SET last_id = 0
             """, (PROGRESS_KEY,))
             conn.commit()
-            print(f"[Genre] ✅ Hoàn thành toàn bộ | fetched: {fetched} | not found: {not_found}")
+            print(f"[Genre] ✅ Hoàn thành toàn bộ | done: {done_count} | not_found: {not_found} | error: {error_count}")
         else:
-            print(f"[Genre] 💾 Dừng giữa chừng | fetched: {fetched} | not found: {not_found} | last_id giữ tại: {last_id}")
+            print(f"[Genre] 💾 Dừng giữa chừng | done: {done_count} | not_found: {not_found} | error: {error_count} | last_id: {last_id}")
 
     except Exception as e:
         conn.rollback()
@@ -143,3 +130,21 @@ async def _run():
     finally:
         cur.close()
         conn.close()
+
+
+# ── helpers ───────────────────────────────────────────────────
+
+def _log_genre(r: dict):
+    status = r["scrape_status"]
+    gid    = r["id"]
+    if status == "done":
+        print(f"[Genre] [{gid}] {r.get('name')}")
+    else:
+        print(f"[Genre] [{gid}] {status}")
+
+
+def _save_progress(cur, key: str, last_id: int):
+    cur.execute("""
+        INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
+        ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
+    """, (key, last_id))

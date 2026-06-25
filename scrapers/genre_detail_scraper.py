@@ -36,7 +36,14 @@ async def fetch_genre(
     genre_id: int,
     bucket: TokenBucket,
     sem: asyncio.Semaphore,
-) -> dict | None:
+) -> dict:
+    """
+    Luôn trả về dict với ít nhất {"id", "scrape_status"}.
+    scrape_status:
+      'done'      → API trả data hợp lệ
+      'not_found' → API xác nhận không tồn tại
+      'error'     → lỗi mạng / timeout → có thể retry sau
+    """
     await bucket.acquire()
     async with sem:
         try:
@@ -45,14 +52,23 @@ async def fetch_genre(
                 headers=HEADERS,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
+                if resp.status == 404:
+                    return {"id": genre_id, "scrape_status": "not_found"}
                 if resp.status != 200:
-                    return None
-                data = await resp.json()
-                if "error" in data or not data.get("name"):
-                    return None
-                return {"id": data.get("id") or genre_id, "name": data["name"]}
+                    return {"id": genre_id, "scrape_status": "error"}
+                data = await resp.json()      
+
+                if "error" in data:
+                    return {"id": genre_id, "scrape_status": "error"}
+                if not data.get("name"):
+                    return {"id": genre_id, "scrape_status": "no_data"}
+                return {
+                    "id":            genre_id,
+                    "name":          data["name"],
+                    "scrape_status": "done",
+                }
         except Exception:
-            return None
+            return {"id": genre_id, "scrape_status": "error"}
 
 
 async def fetch_batch(
@@ -60,7 +76,7 @@ async def fetch_batch(
     genre_ids: list[int],
     bucket: TokenBucket,
     sem: asyncio.Semaphore,
-) -> list[dict | None]:
+) -> list[dict]:
     tasks = [fetch_genre(session, gid, bucket, sem) for gid in genre_ids]
     return await asyncio.gather(*tasks, return_exceptions=False)
 
@@ -69,8 +85,8 @@ async def fetch_batch(
 
 def sync_pending_genres(cur) -> int:
     cur.execute("""
-        INSERT INTO genres (id, name)
-        SELECT DISTINCT genre_id, NULL
+        INSERT INTO genres (id, name, scrape_status)
+        SELECT DISTINCT genre_id, NULL, 'pending'
         FROM albums
         WHERE genre_id IS NOT NULL
         ON CONFLICT (id) DO NOTHING
@@ -79,24 +95,29 @@ def sync_pending_genres(cur) -> int:
 
 
 def count_pending_genres(cur) -> int:
-    cur.execute("SELECT COUNT(*) FROM genres WHERE name IS NULL")
+    cur.execute("""
+        SELECT COUNT(*) FROM genres
+        WHERE scrape_status = 'pending'
+    """)
     return cur.fetchone()[0]
 
 
 def get_pending_genre_ids(cur, last_id: int, limit: int) -> list[int]:
     cur.execute("""
         SELECT id FROM genres
-        WHERE name IS NULL AND id > %s
+        WHERE scrape_status = 'pending' AND id > %s
         ORDER BY id
         LIMIT %s
     """, (last_id, limit))
     return [row[0] for row in cur.fetchall()]
 
 
-def save_genre(cur, genre: dict):
+def save_genre(cur, result: dict):
     cur.execute("""
-        INSERT INTO genres (id, name)
-        VALUES (%s, %s)
+        INSERT INTO genres (id, name, scrape_status, scrape_attempted_at)
+        VALUES (%s, %s, %s, NOW())
         ON CONFLICT (id) DO UPDATE SET
-            name = COALESCE(EXCLUDED.name, genres.name)
-    """, (genre["id"], genre["name"]))
+            name                = COALESCE(EXCLUDED.name, genres.name),
+            scrape_status       = EXCLUDED.scrape_status,
+            scrape_attempted_at = NOW()
+    """, (result["id"], result.get("name"), result["scrape_status"]))
