@@ -10,24 +10,24 @@ Dự án thu thập dữ liệu quy mô lớn từ Deezer Public API, lưu trữ
 ┌─────────────────────────────────────────────────────────┐
 │                     Docker Compose                      │
 │                                                         │
-│  ┌──────────────┐   ┌──────────────┐                   │
-│  │   scraper    │   │   scraper    │                   │
-│  │   (artist)   │   │    (user)    │                   │
-│  │  6.5 req/s   │   │   3 req/s    │                   │
-│  └──────┬───────┘   └──────┬───────┘                   │
+│  ┌──────────────┐   ┌──────────────┐                    │
+│  │   scraper    │   │   scraper    │                    │
+│  │   (artist)   │   │    (user)    │                    │
+│  │  6.5 req/s   │   │   3 req/s    │                    │
+│  └──────┬───────┘   └──────┬───────┘                    │
 │         │                  │                            │
 │         ▼                  ▼                            │
-│  ┌─────────────────────────────┐                       │
-│  │         PostgreSQL          │                       │
-│  │       (container)           │                       │
-│  └─────────────┬───────────────┘                       │
+│  ┌─────────────────────────────┐                        │
+│  │         PostgreSQL          │                        │
+│  │       (container)           │                        │
+│  └─────────────┬───────────────┘                        │
 │                │                                        │
-│  ┌─────────────▼───────────────┐                       │
-│  │    Apache Superset          │                       │
-│  │       (container)           │                       │
-│  └─────────────────────────────┘                       │
+│  ┌─────────────▼───────────────┐                        │
+│  │    Apache Superset          │                        │
+│  │       (container)           │                        │
+│  └─────────────────────────────┘                        │
 │                                                         │
-│  ── Job phụ (--profile jobs) ──────────────────────    │
+│  ── Job phụ (--profile jobs) ──────────────────────     │
 │  scraper_genre_detail  │  scraper_album_detail  │       │
 │  scraper_track_detail                                   │
 └─────────────────────────────────────────────────────────┘
@@ -40,16 +40,16 @@ Dự án thu thập dữ liệu quy mô lớn từ Deezer Public API, lưu trữ
 | Bảng | Mô tả |
 |---|---|
 | `artists` | Thông tin nghệ sĩ: id, name, nb_album, nb_fan |
-| `genres` | Thể loại nhạc, có trạng thái `scrape_status` |
+| `genres` | Thể loại nhạc: id, name, `scrape_status` |
 | `albums` | Album: title, genre_id, release_date, record_type, fans |
-| `artist_albums` | Quan hệ artist–album kèm role của contributor |
+| `artist_albums` | Quan hệ artist–album kèm role của contributor: artist_id, album_id, role |
 | `tracks` | Track: title, duration, rank, bpm, release_date |
-| `album_tracks` | Quan hệ album–track kèm thứ tự track |
-| `track_available_countries` | Các quốc gia mà track khả dụng |
-| `users` | Người dùng: name, email, birthday, gender, country, lang |
-| `user_fav_tracks` | Track yêu thích của user |
-| `user_fav_artists` | Nghệ sĩ yêu thích của user |
-| `user_fav_albums` | Album yêu thích của user |
+| `album_tracks` | Quan hệ album–track kèm thứ tự track: album_id, track_id, track_position |
+| `track_available_countries` | Các quốc gia mà track khả dụng: track_id, country |
+| `users` | Người dùng: id, name, lastname, firstname, email, birthday, gender, country, lang, is_kid |
+| `user_fav_tracks` | Track yêu thích của user: user_id, track_id, time_add |
+| `user_fav_artists` | Nghệ sĩ yêu thích của user: user_id, artist_id, time_add |
+| `user_fav_albums` | Album yêu thích của user: user_id, album_id, time_add |
 | `scrape_progress` | Theo dõi tiến trình cào (last_id) của từng scraper |
 
 ---
