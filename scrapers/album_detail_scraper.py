@@ -116,9 +116,6 @@ async def fetch_album_tracks(
                     for item in data["data"]:
                         tracks.append({
                             "id":             item["id"],
-                            "title":          item.get("title"),
-                            "duration":       item.get("duration"),
-                            "rank":           item.get("rank"),
                             "track_position": item.get("track_position"),
                         })
                     url = data.get("next")

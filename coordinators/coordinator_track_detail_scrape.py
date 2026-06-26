@@ -45,7 +45,7 @@ async def _run():
         bucket = TokenBucket(TRACK_DETAIL_REQUESTS_PER_SECOND)
         sem    = asyncio.Semaphore(CONCURRENCY)
 
-        done_count = not_found = 0
+        done_count = not_found = error_count = 0
         completed_normally = False
 
         async with aiohttp.ClientSession() as session:
@@ -76,7 +76,7 @@ async def _run():
                     if fetch_task in done and not fetch_task.cancelled():
                         try:
                             results = fetch_task.result()
-                            done_count, not_found = _tally(results, done_count, not_found)
+                            done_count, not_found, error_count = _tally(results, done_count, not_found, error_count)
                             save_batch(cur, results)
                             conn.commit()
                         except Exception:
@@ -85,13 +85,10 @@ async def _run():
 
                 results = fetch_task.result()
                 save_batch(cur, results)
-                done_count, not_found = _tally(results, done_count, not_found)
+                done_count, not_found, error_count = _tally(results, done_count, not_found, error_count)
                 conn.commit()  # ← bỏ _save_progress
 
-                print(
-                    f"[TrackDetail] batch xong | "
-                    f"done: {done_count} | not_found: {not_found}"
-                )
+                print(f"[TrackDetail] batch xong | done: {done_count} | not_found: {not_found} | error: {error_count}")
 
         if completed_normally:
             conn.commit()
@@ -109,10 +106,13 @@ async def _run():
         conn.close()
 
 
-def _tally(results: list[dict], done_count: int, not_found: int) -> tuple[int, int]:
+def _tally(results: list[dict], done: int, not_found: int, error: int) -> tuple[int, int, int]:
     for r in results:
-        if r["scrape_status"] == "done":
-            done_count += 1
+        status = r["scrape_status"]
+        if status == "done":
+            done      += 1
+        elif status == "not_found":
+            not_found += 1
         else:
-            not_found  += 1
-    return done_count, not_found
+            error     += 1
+    return done, not_found, error

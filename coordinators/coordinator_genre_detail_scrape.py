@@ -54,15 +54,13 @@ async def _run():
 
         async with aiohttp.ClientSession() as session:
             while not stop_event.is_set():
-                genre_ids = get_pending_genre_ids(cur, BATCH_SIZE)  # ← bỏ last_id
+                genre_ids = get_pending_genre_ids(cur, BATCH_SIZE)
                 if not genre_ids:
                     completed_normally = True
                     break
 
-                fetch_task = asyncio.create_task(
-                    fetch_batch(session, genre_ids, bucket, sem)
-                )
-                stop_task = asyncio.create_task(stop_event.wait())
+                fetch_task = asyncio.create_task(fetch_batch(session, genre_ids, bucket, sem))
+                stop_task  = asyncio.create_task(stop_event.wait())
 
                 done, pending_tasks = await asyncio.wait(
                     [fetch_task, stop_task],
@@ -89,18 +87,12 @@ async def _run():
 
                 results = fetch_task.result()
                 for r in results:
-                    if   r["scrape_status"] == "done":      done_count  += 1
-                    elif r["scrape_status"] == "not_found": not_found   += 1
-                    else:                                   error_count += 1
                     _log_genre(r)
                     save_genre(cur, r)
+                done_count, not_found, error_count = _tally(results, done_count, not_found, error_count)
+                conn.commit()
 
-                conn.commit()  # ← bỏ _save_progress
-
-                print(
-                    f"[Genre] batch xong | "
-                    f"done: {done_count} | not_found: {not_found} | error: {error_count}"
-                )
+                print(f"[Genre] batch xong | done: {done_count} | not_found: {not_found} | error: {error_count}")
 
         if completed_normally:
             conn.commit()
@@ -118,10 +110,21 @@ async def _run():
         conn.close()
 
 
+def _tally(results: list[dict], done: int, not_found: int, error: int) -> tuple[int, int, int]:
+    for r in results:
+        status = r["scrape_status"]
+        if status == "done":
+            done      += 1
+        elif status == "not_found":
+            not_found += 1
+        else:
+            error     += 1
+    return done, not_found, error
+
+
 def _log_genre(r: dict):
     status = r["scrape_status"]
-    gid    = r["id"]
     if status == "done":
-        print(f"[Genre] [{gid}] {r.get('name')}")
+        print(f"[Genre] [{r['id']}] {r.get('name')}")
     else:
-        print(f"[Genre] [{gid}] {status}")
+        print(f"[Genre] [{r['id']}] {status}")
