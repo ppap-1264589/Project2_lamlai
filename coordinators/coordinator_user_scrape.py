@@ -1,3 +1,4 @@
+# coordinator_user_scrape.py
 import signal
 from db import get_connection, setup_tables
 from scrapers.user_scraper import fetch_user, save_user
@@ -34,6 +35,7 @@ def run_user_scrape():
 
     try:
         while running:
+            success = False  # ← thêm flag
             try:
                 user = fetch_user(user_id)
                 if user:
@@ -85,19 +87,22 @@ def run_user_scrape():
                         flush=True,
                     )
 
-                # Lưu tiến độ — chỉ chạy nếu không break ở trên
-                cur.execute("""
-                    INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
-                    ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
-                """, (PROGRESS_KEY, user_id))
-                conn.commit()
+                success = True  # ← chỉ set True khi không có exception
 
             except Exception as e:
                 if running:
                     print(f"[User]   ⚠️  Lỗi user_id {user_id}: {e}", flush=True)
                 conn.rollback()
+                # success vẫn là False → không lưu progress, không tăng user_id
 
-            user_id += 1
+            if success:  # ← chỉ lưu và tăng khi thành công
+                cur.execute("""
+                    INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
+                    ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
+                """, (PROGRESS_KEY, user_id))
+                conn.commit()
+                user_id += 1
+            # nếu lỗi: không tăng user_id, retry vòng tiếp theo
 
     finally:
         print(f"[User] ✅ Phiên này: {session_found} users | Tổng DB: {total_db}", flush=True)

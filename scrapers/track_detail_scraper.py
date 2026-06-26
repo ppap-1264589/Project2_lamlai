@@ -95,13 +95,13 @@ def count_pending_tracks(cur) -> int:
     return cur.fetchone()[0]
 
 
-def get_pending_track_ids(cur, last_id: int, limit: int) -> list[int]:
+def get_pending_track_ids(cur, limit: int) -> list[int]:
     cur.execute("""
         SELECT id FROM tracks
-        WHERE scrape_status = 'pending' AND id > %s
+        WHERE scrape_status = 'pending'
         ORDER BY id
         LIMIT %s
-    """, (last_id, limit))
+    """, (limit,))
     return [row[0] for row in cur.fetchall()]
 
 

@@ -102,13 +102,13 @@ def count_pending_genres(cur) -> int:
     return cur.fetchone()[0]
 
 
-def get_pending_genre_ids(cur, last_id: int, limit: int) -> list[int]:
+def get_pending_genre_ids(cur, limit: int) -> list[int]:
     cur.execute("""
         SELECT id FROM genres
-        WHERE scrape_status = 'pending' AND id > %s
+        WHERE scrape_status = 'pending'
         ORDER BY id
         LIMIT %s
-    """, (last_id, limit))
+    """, (limit,))
     return [row[0] for row in cur.fetchall()]
 
 
