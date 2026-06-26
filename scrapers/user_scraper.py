@@ -6,7 +6,7 @@ from config import USER_URL, USER_RATE_LIMIT_DELAY, HEADERS
 def fetch_user(user_id: int) -> dict | None:
     resp = requests.get(USER_URL.format(id=user_id), timeout=5, headers=HEADERS)
     time.sleep(USER_RATE_LIMIT_DELAY)
-    data = resp.json(content_type=None)
+    data = resp.json()
     if "error" in data:
         return None
     return {

@@ -13,7 +13,7 @@ def fetch_fav_album(user_id: int) -> list[dict]:
     while url:
         resp = requests.get(url, timeout=5, headers=HEADERS)
         time.sleep(USER_RATE_LIMIT_DELAY)
-        data = resp.json(content_type=None)
+        data = resp.json()
         if "error" in data or "data" not in data:
             break
         for item in data["data"]:

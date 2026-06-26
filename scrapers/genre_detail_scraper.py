@@ -56,7 +56,7 @@ async def fetch_genre(
                     return {"id": genre_id, "scrape_status": "not_found"}
                 if resp.status == 429:
                     return {"id": genre_id, "scrape_status": "rlimit"}
-                data = await resp.json(content_type=None)      
+                data = await resp.json()      
 
                 if "error" in data:
                     return {"id": genre_id, "scrape_status": "error"}

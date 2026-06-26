@@ -10,7 +10,7 @@ def fetch_albums(artist_id: int) -> list[dict]:
     while url:
         resp = requests.get(url, timeout=5, headers=HEADERS)
         time.sleep(RATE_LIMIT_DELAY)
-        data = resp.json(content_type=None)
+        data = resp.json()
         if "error" in data or "data" not in data:
             break
         for item in data["data"]:
@@ -34,7 +34,7 @@ def fetch_album_ids(artist_id: int) -> list[int]:
     while url:
         resp = requests.get(url, timeout=5, headers=HEADERS)
         time.sleep(RATE_LIMIT_DELAY)
-        data = resp.json(content_type=None)
+        data = resp.json()
         if "error" in data or "data" not in data:
             break
         for item in data["data"]:

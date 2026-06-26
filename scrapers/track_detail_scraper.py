@@ -58,7 +58,7 @@ async def fetch_track_detail(
                     return {"id": track_id, "scrape_status": "not_found"}
                 if resp.status == 429:
                     return {"id": track_id, "scrape_status": "rlimit"}
-                data = await resp.json(content_type=None)
+                data = await resp.json()
 
                 if "error" in data:
                     return {"id": track_id, "scrape_status": "error"}
