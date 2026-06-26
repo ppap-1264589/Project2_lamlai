@@ -6,7 +6,9 @@ from scrapers.album_detail_scraper import (
     count_pending_albums,
     get_pending_album_ids,
     fetch_batch,
+    fetch_tracks_batch,
     save_batch,
+    save_album_tracks,
     BATCH_SIZE,
 )
 from config import TRACK_DETAIL_REQUESTS_PER_SECOND
@@ -60,6 +62,7 @@ async def _run():
                     completed_normally = True
                     break
 
+                # ── Bước 1: fetch album detail ────────────────
                 fetch_task = asyncio.create_task(
                     fetch_batch(session, album_ids, bucket, sem)
                 )
@@ -83,6 +86,12 @@ async def _run():
                             results = fetch_task.result()
                             _tally(results, done_count, not_found, error_count)
                             save_batch(cur, results)
+                            # Vẫn lưu tracks cho batch cuối trước khi dừng
+                            done_ids = [int(r["id"]) for r in results if r["scrape_status"] == "done"]
+                            if done_ids:
+                                track_results = await fetch_tracks_batch(session, done_ids, bucket, sem)
+                                for tr in track_results:
+                                    save_album_tracks(cur, tr["album_id"], tr["tracks"])
                             last_id = album_ids[-1]
                             _save_progress(cur, PROGRESS_KEY, last_id)
                             conn.commit()
@@ -97,7 +106,17 @@ async def _run():
                     else:                                   error_count += 1
                     _log_album(r)
 
+                # ── Bước 2: save album detail ─────────────────
                 save_batch(cur, results)
+
+                # ── Bước 3: fetch + save tracks cho album done ─
+                done_ids = [int(r["id"]) for r in results if r["scrape_status"] == "done"]
+                if done_ids:
+                    print(f"[AlbumDetail] fetch tracks cho {len(done_ids)} album...", flush=True)
+                    track_results = await fetch_tracks_batch(session, done_ids, bucket, sem)
+                    for tr in track_results:
+                        save_album_tracks(cur, tr["album_id"], tr["tracks"])
+
                 last_id = album_ids[-1]
                 _save_progress(cur, PROGRESS_KEY, last_id)
                 conn.commit()

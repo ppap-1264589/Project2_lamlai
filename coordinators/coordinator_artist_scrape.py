@@ -1,7 +1,7 @@
 import signal
 from db import get_connection, setup_tables
 from scrapers.artist_scraper import fetch_artist, save_artist
-from scrapers.album_scraper import fetch_albums, fetch_album_detail, save_album, save_artist_album
+from scrapers.album_scraper import fetch_albums, save_album, save_artist_album
 from scrapers.album_track_scraper import fetch_tracks, save_tracks
 
 PROGRESS_KEY = "artist"
@@ -33,6 +33,7 @@ def run_artist_scrape():
 
     try:
         while running:
+            success = False
             try:
                 artist = fetch_artist(artist_id)
                 if artist:
@@ -50,9 +51,8 @@ def run_artist_scrape():
                             stop_requested = True
                             break
 
-                        detail, contributors = fetch_album_detail(album["id"])
-                        save_album(cur, detail if detail else album)
-                        save_artist_album(cur, artist_id, album["id"], contributors)
+                        save_album(cur, album)
+                        save_artist_album(cur, artist_id, album["id"])
                         tracks = fetch_tracks(album["id"])
                         save_tracks(cur, album["id"], tracks)
 
@@ -71,19 +71,21 @@ def run_artist_scrape():
                         flush=True,
                     )
 
-                # Lưu tiến độ — chỉ chạy nếu không break ở trên
-                cur.execute("""
-                    INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
-                    ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
-                """, (PROGRESS_KEY, artist_id))
-                conn.commit()
+                success = True  # kể cả artist_id không tồn tại (fetch trả None) cũng skip bình thường
 
             except Exception as e:
                 if running:
                     print(f"[Artist]   ⚠️  Lỗi ID {artist_id}: {e}", flush=True)
                 conn.rollback()
 
-            artist_id += 1
+            if success:
+                cur.execute("""
+                    INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
+                    ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
+                """, (PROGRESS_KEY, artist_id))
+                conn.commit()
+                artist_id += 1
+            # nếu lỗi: không tăng artist_id, retry vòng tiếp theo
 
     finally:
         print(f"[Artist] ✅ Phiên này: {session_found} artists | Tổng DB: {total_db}", flush=True)

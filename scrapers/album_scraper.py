@@ -70,12 +70,9 @@ def save_album(cur, album: dict):
           album["release_date"], album["record_type"], album["fans"]))
 
 
-def save_artist_album(cur, artist_id: int, album_id: int, contributors: list[dict]):
-    for c in contributors:
-        if c["artist_id"] == artist_id:
-            cur.execute("""
-                INSERT INTO artist_albums (artist_id, album_id, role)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (artist_id, album_id) DO NOTHING
-            """, (artist_id, album_id, c["role"]))
-            break
+def save_artist_album(cur, artist_id: int, album_id: int):
+    cur.execute("""
+        INSERT INTO artist_albums (artist_id, album_id)
+        VALUES (%s, %s)
+        ON CONFLICT (artist_id, album_id) DO NOTHING
+    """, (artist_id, album_id))

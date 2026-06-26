@@ -42,7 +42,7 @@ async def _run():
 
         cur.execute("SELECT last_id FROM scrape_progress WHERE scraper = %s", (PROGRESS_KEY,))
         row = cur.fetchone()
-        last_id = -100 if row[0] == 0 else row[0]
+        last_id = row[0] if row is not None else -100
 
         pending = count_pending_genres(cur)
         print(f"[Genre] pending: {pending} | synced mới: {inserted} | tiếp từ id > {last_id}")
