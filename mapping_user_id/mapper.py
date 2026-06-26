@@ -72,7 +72,7 @@ async def check_id(
     await bucket.acquire()
     async with sem:
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as r:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15, sock_connect=5, sock_read=10)) as r:
                 if r.status != 200:
                     return False
                 data = await r.json()

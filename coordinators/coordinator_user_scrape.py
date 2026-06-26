@@ -4,7 +4,7 @@ from db import get_connection, setup_tables
 from scrapers.user_scraper import fetch_user, save_user
 from scrapers.user_fav_track_scraper import fetch_fav_tracks, save_fav_tracks
 from scrapers.user_fav_artist_scraper import fetch_fav_artists, save_fav_artists
-from scrapers.user_fav_album_scraper import fetch_fav_albums, fetch_album_detail, save_fav_albums
+from scrapers.user_fav_album_scraper import fetch_fav_album, save_fav_albums
 
 PROGRESS_KEY = "user"
 
@@ -59,30 +59,18 @@ def run_user_scrape():
                     if not running:
                         break
 
-                    entries = fetch_fav_albums(user_id)
-                    albums_full = []
-                    stop_requested = False
-                    for entry in entries:
-                        if not running:
-                            stop_requested = True
-                            break
-                        detail = fetch_album_detail(entry["album_id"])
-                        if detail:
-                            detail["time_add"] = entry["time_add"]
-                            albums_full.append(detail)
-
-                    save_fav_albums(cur, user_id, albums_full)
+                    albums = fetch_fav_album(user_id)
+                    save_fav_albums(cur, user_id, albums)
                     conn.commit()
 
-                    if stop_requested:
-                        print(f"[User] ⛔ Dừng giữa chừng tại ID {user_id} — sẽ cào lại lần sau.", flush=True)
+                    if not running:
                         break
 
                     session_found += 1
                     total_db += 1
                     print(
                         f"[User] [ID {user_id}] {user['name']} ({user['country']}) "
-                        f"— tracks: {len(tracks)} | artists: {len(artists)} | albums: {len(albums_full)} "
+                        f"— tracks: {len(tracks)} | artists: {len(artists)} | albums: {len(albums)} "
                         f"| phiên này: {session_found} | tổng DB: {total_db}",
                         flush=True,
                     )

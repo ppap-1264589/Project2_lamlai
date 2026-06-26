@@ -1,11 +1,11 @@
 import signal
 from db import get_connection, setup_tables
 from scrapers.artist_scraper import fetch_artist, save_artist
-from scrapers.album_scraper import fetch_albums, save_album, save_artist_album
-from scrapers.album_track_scraper import fetch_tracks, save_tracks
+from scrapers.album_scraper import fetch_album_ids, save_album_id, save_artist_album
 
 PROGRESS_KEY = "artist"
 
+# DONE LOGIC
 def run_artist_scrape():
     conn = get_connection()
     setup_tables(conn)
@@ -43,18 +43,16 @@ def run_artist_scrape():
                     if not running:
                         break
 
-                    albums = fetch_albums(artist_id)
+                    album_ids = fetch_album_ids(artist_id)
                     stop_requested = False
 
-                    for album in albums:
+                    for aid in album_ids:
                         if not running:
                             stop_requested = True
                             break
 
-                        save_album(cur, album)
-                        save_artist_album(cur, artist_id, album["id"])
-                        tracks = fetch_tracks(album["id"])
-                        save_tracks(cur, album["id"], tracks)
+                        save_album_id(cur, aid)
+                        save_artist_album(cur, artist_id, aid)
 
                     conn.commit()
 
@@ -66,7 +64,7 @@ def run_artist_scrape():
                     total_db += 1
                     print(
                         f"[Artist] [ID {artist_id}] {artist['name']} "
-                        f"— {artist['nb_fan']:,} fans | {len(albums)} albums "
+                        f"— {artist['nb_fan']:,} fans | {len(album_ids)} albums "
                         f"| phiên này: {session_found} | tổng DB: {total_db}",
                         flush=True,
                     )

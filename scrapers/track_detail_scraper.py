@@ -12,7 +12,7 @@ BATCH_SIZE = 49
 class TokenBucket:
     def __init__(self, rate: float):
         self.rate        = rate
-        self.tokens      = rate
+        self.tokens      = 0
         self.last_refill = time.perf_counter()
         self._lock       = asyncio.Lock()
 
@@ -52,13 +52,13 @@ async def fetch_track_detail(
             async with session.get(
                 TRACK_URL.format(id=track_id),
                 headers=HEADERS,
-                timeout=aiohttp.ClientTimeout(total=10),
+                timeout=aiohttp.ClientTimeout(total=15, sock_connect=5, sock_read=10),
             ) as resp:
                 if resp.status == 404:
                     return {"id": track_id, "scrape_status": "not_found"}
-                if resp.status != 200:
-                    return {"id": track_id, "scrape_status": "error"}
-                data = await resp.json()
+                if resp.status == 429:
+                    return {"id": track_id, "scrape_status": "rlimit"}
+                data = await resp.json(content_type=None)
 
                 if "error" in data:
                     return {"id": track_id, "scrape_status": "error"}
@@ -66,8 +66,11 @@ async def fetch_track_detail(
                     return {"id": track_id, "scrape_status": "no_data"}
                 return {
                     "id":                  track_id,
+                    "title":               data.get("title"),
+                    "duration":            data.get("duration"),
+                    "rank":                data.get("rank"),
                     "bpm":                 data.get("bpm"),
-                    "release_date":        data.get("release_date") or None,
+                    "release_date":        data.get("release_date") if data.get("release_date") not in (None, "", "0000-00-00") else None,
                     "available_countries": data.get("available_countries") or [],
                     "scrape_status":       "done",
                 }
@@ -106,25 +109,43 @@ def get_pending_track_ids(cur, limit: int) -> list[int]:
 
 
 def save_batch(cur, results: list[dict]):
-    """Bulk update tracks + insert available_countries cho cả batch."""
     if not results:
         return
 
-    # UPDATE tracks — ghi status cho tất cả, kể cả not_found/error
+    # Deduplicate — ưu tiên giữ 'done' nếu trùng
+    seen: dict[int, dict] = {}
     for r in results:
+        try:
+            rid = int(r["id"])
+        except (ValueError, TypeError):
+            continue
+        if rid not in seen or r["scrape_status"] == "done":
+            seen[rid] = r
+
+    # Upsert tracks
+    for r in seen.values():
         cur.execute("""
-            UPDATE tracks
-            SET bpm                 = COALESCE(%s, bpm),
-                release_date        = COALESCE(%s, release_date),
-                scrape_status       = %s,
-                scrape_attempted_at = NOW()
-            WHERE id = %s
-        """, (r.get("bpm"), r.get("release_date"), r["scrape_status"], r["id"]))
+            INSERT INTO tracks (id, title, duration, rank, bpm, release_date,
+                                scrape_status, scrape_attempted_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                title               = COALESCE(EXCLUDED.title,        tracks.title),
+                duration            = COALESCE(EXCLUDED.duration,     tracks.duration),
+                rank                = COALESCE(EXCLUDED.rank,         tracks.rank),
+                bpm                 = COALESCE(EXCLUDED.bpm,          tracks.bpm),
+                release_date        = COALESCE(EXCLUDED.release_date, tracks.release_date),
+                scrape_status =     CASE
+                                    WHEN tracks.scrape_status = 'done' THEN 'done'
+                                    ELSE EXCLUDED.scrape_status
+                                    END,
+                scrape_attempted_at = EXCLUDED.scrape_attempted_at
+        """, (r["id"], r.get("title"), r.get("duration"), r.get("rank"),
+              r.get("bpm"), r.get("release_date"), r["scrape_status"]))
 
     # Bulk insert available_countries — chỉ cho 'done'
     country_rows = [
         (r["id"], country)
-        for r in results
+        for r in seen.values()
         if r["scrape_status"] == "done"
         for country in r.get("available_countries", [])
     ]

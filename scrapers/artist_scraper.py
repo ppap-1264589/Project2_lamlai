@@ -2,10 +2,11 @@ import requests
 import time
 from config import ARTIST_URL, RATE_LIMIT_DELAY, HEADERS
 
+# DONE LOGIC
 def fetch_artist(artist_id: int) -> dict | None:
     resp = requests.get(ARTIST_URL.format(id=artist_id), timeout=5, headers=HEADERS)
     time.sleep(RATE_LIMIT_DELAY)
-    data = resp.json()
+    data = resp.json(content_type=None)
     if "error" in data:
         return None
     return {
@@ -15,6 +16,7 @@ def fetch_artist(artist_id: int) -> dict | None:
         "nb_fan":   data.get("nb_fan"),
     }
 
+# DONE LOGIC
 def save_artist(cur, artist: dict):
     cur.execute("""
         INSERT INTO artists (id, name, nb_album, nb_fan)

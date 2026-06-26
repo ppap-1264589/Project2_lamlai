@@ -3,7 +3,7 @@ import time
 from config import USER_FAV_ARTISTS, USER_RATE_LIMIT_DELAY, HEADERS
 from psycopg2.extras import execute_values
 
-
+# DONE LOGIC
 def fetch_fav_artists(user_id: int) -> list[dict]:
     """Fetch tất cả nghệ sĩ yêu thích của một user (có phân trang)."""
     artists = []
@@ -11,7 +11,7 @@ def fetch_fav_artists(user_id: int) -> list[dict]:
     while url:
         resp = requests.get(url, timeout=5, headers=HEADERS)
         time.sleep(USER_RATE_LIMIT_DELAY)
-        data = resp.json()
+        data = resp.json(content_type=None)
         if "error" in data or "data" not in data:
             break
         for item in data["data"]:
@@ -25,7 +25,7 @@ def fetch_fav_artists(user_id: int) -> list[dict]:
         url = data.get("next")
     return artists
 
-
+# DONE LOGIC
 def save_fav_artists(cur, user_id: int, artists: list[dict]):
     """Lưu danh sách nghệ sĩ yêu thích vào DB.
 

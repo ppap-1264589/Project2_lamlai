@@ -91,13 +91,14 @@ async def _run():
                     break
 
                 results = fetch_task.result()
+
+                save_batch(cur, results)
+
                 for r in results:
                     if   r["scrape_status"] == "done":      done_count  += 1
                     elif r["scrape_status"] == "not_found": not_found   += 1
                     else:                                   error_count += 1
                     _log_album(r)
-
-                save_batch(cur, results)
 
                 done_ids = [int(r["id"]) for r in results if r["scrape_status"] == "done"]
                 if done_ids:
@@ -140,13 +141,6 @@ async def _run():
 
 # ── helpers ───────────────────────────────────────────────────
 
-def _tally(results, done_count, not_found, error_count):
-    for r in results:
-        if   r["scrape_status"] == "done":      done_count  += 1
-        elif r["scrape_status"] == "not_found": not_found   += 1
-        else:                                   error_count += 1
-
-
 def _log_album(r: dict):
     status = r["scrape_status"]
     aid    = r["id"]
@@ -154,10 +148,3 @@ def _log_album(r: dict):
         print(f"[AlbumDetail] [{aid}] {r.get('title')}", flush=True)
     else:
         print(f"[AlbumDetail] [{aid}] {status}", flush=True)
-
-
-def _save_progress(cur, key: str, last_id: int):
-    cur.execute("""
-        INSERT INTO scrape_progress (scraper, last_id) VALUES (%s, %s)
-        ON CONFLICT (scraper) DO UPDATE SET last_id = EXCLUDED.last_id
-    """, (key, last_id))

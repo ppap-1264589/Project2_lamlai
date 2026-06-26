@@ -84,8 +84,8 @@ async def _run():
                     break
 
                 results = fetch_task.result()
-                done_count, not_found = _tally(results, done_count, not_found)
                 save_batch(cur, results)
+                done_count, not_found = _tally(results, done_count, not_found)
                 conn.commit()  # ← bỏ _save_progress
 
                 print(

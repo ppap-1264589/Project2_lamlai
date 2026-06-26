@@ -11,7 +11,7 @@ BATCH_SIZE = 49
 class TokenBucket:
     def __init__(self, rate: float):
         self.rate        = rate
-        self.tokens      = rate
+        self.tokens      = 0
         self.last_refill = time.perf_counter()
         self._lock       = asyncio.Lock()
 
@@ -50,13 +50,13 @@ async def fetch_genre(
             async with session.get(
                 GENRE_URL.format(id=genre_id),
                 headers=HEADERS,
-                timeout=aiohttp.ClientTimeout(total=10),
+                timeout=aiohttp.ClientTimeout(total=15, sock_connect=5, sock_read=10),
             ) as resp:
                 if resp.status == 404:
                     return {"id": genre_id, "scrape_status": "not_found"}
-                if resp.status != 200:
-                    return {"id": genre_id, "scrape_status": "error"}
-                data = await resp.json()      
+                if resp.status == 429:
+                    return {"id": genre_id, "scrape_status": "rlimit"}
+                data = await resp.json(content_type=None)      
 
                 if "error" in data:
                     return {"id": genre_id, "scrape_status": "error"}

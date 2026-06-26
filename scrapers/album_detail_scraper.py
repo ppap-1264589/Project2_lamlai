@@ -8,11 +8,11 @@ BATCH_SIZE = 49
 
 
 # ── Token Bucket rate limiter ─────────────────────────────────
-
+# DONE LOGIC
 class TokenBucket:
     def __init__(self, rate: float):
         self.rate        = rate
-        self.tokens      = rate
+        self.tokens      = 0
         self.last_refill = time.perf_counter()
         self._lock       = asyncio.Lock()
 
@@ -31,7 +31,7 @@ class TokenBucket:
 
 
 # ── Async fetch album detail ──────────────────────────────────
-
+# DONE LOGIC
 async def fetch_album_detail(
     session: aiohttp.ClientSession,
     album_id: int,
@@ -44,32 +44,36 @@ async def fetch_album_detail(
             async with session.get(
                 ALBUM_URL.format(id=album_id),
                 headers=HEADERS,
-                timeout=aiohttp.ClientTimeout(total=10),
+                timeout=aiohttp.ClientTimeout(total=15, sock_connect=5, sock_read=10),
             ) as resp:
                 if resp.status == 404:
                     return {"id": album_id, "scrape_status": "not_found"}
-                if resp.status != 200:
-                    return {"id": album_id, "scrape_status": "error"}
+                if resp.status == 429:
+                    return {"id": album_id, "scrape_status": "rlimit"}
 
-                data = await resp.json()
-                if "error" in data:
-                    return {"id": album_id, "scrape_status": "not_found"}
+                data = await resp.json(content_type=None)
 
-                fields = ["title", "genre_id", "release_date", "record_type", "fans"]
+                fields = ["title", "genre_id", "duration", "release_date", "record_type", "fans"]
                 has_data = any(data.get(f) not in (None, "") for f in fields)
 
-                if not has_data:
-                    return {"id": album_id, "scrape_status": "no_data"}
+                if has_data:
+                    return {
+                        "id":            album_id,
+                        "title":         data.get("title"),
+                        "genre_id":      data.get("genre_id"),
+                        "duration":      data.get("duration"),
+                        "release_date":  data.get("release_date") if data.get("release_date") not in (None, "", "0000-00-00") else None,
+                        "record_type":   data.get("record_type"),
+                        "fans":          data.get("fans"),
+                        "scrape_status": "done",
+                    }
 
-                return {
-                    "id":            album_id,
-                    "title":         data.get("title"),
-                    "genre_id":      data.get("genre_id"),
-                    "release_date":  data.get("release_date") or None,
-                    "record_type":   data.get("record_type"),
-                    "fans":          data.get("fans"),
-                    "scrape_status": "done",
-                }
+                # Chỉ not_found khi API báo lỗi rõ ràng hoặc thực sự không có data
+                if "error" in data:
+                    return {"id": album_id, "scrape_status": "error"}
+
+                return {"id": album_id, "scrape_status": "no_data"}
+
         except Exception:
             return {"id": album_id, "scrape_status": "error"}
 
@@ -102,11 +106,11 @@ async def fetch_album_tracks(
                 async with session.get(
                     url,
                     headers=HEADERS,
-                    timeout=aiohttp.ClientTimeout(total=10),
+                    timeout=aiohttp.ClientTimeout(total=15, sock_connect=5, sock_read=10),
                 ) as resp:
                     if resp.status != 200:
                         break
-                    data = await resp.json()
+                    data = await resp.json(content_type=None)
                     if "error" in data or "data" not in data:
                         break
                     for item in data["data"]:
@@ -142,7 +146,7 @@ def count_pending_albums(cur) -> int:
     """)
     return cur.fetchone()[0]
 
-
+# DONE LOGIC
 def get_pending_album_ids(cur, limit: int) -> list[int]:
     cur.execute("""
         SELECT id FROM albums
@@ -153,18 +157,17 @@ def get_pending_album_ids(cur, limit: int) -> list[int]:
     return [row[0] for row in cur.fetchall()]
 
 def save_batch(cur, results: list[dict]):
-    """Bulk upsert album detail — cả done lẫn not_found/error đều được ghi status."""
     if not results:
         return
 
+    # Deduplicate — ưu tiên giữ 'done' nếu trùng
     seen: dict[int, dict] = {}
     for r in results:
         try:
             rid = int(r["id"])
         except (ValueError, TypeError):
             continue
-        status = r["scrape_status"]
-        if rid not in seen or status == "done":
+        if rid not in seen or r["scrape_status"] == "done":
             seen[rid] = r
 
     rows = [
@@ -172,6 +175,7 @@ def save_batch(cur, results: list[dict]):
             int(r["id"]),
             r.get("title"),
             r.get("genre_id"),
+            r.get("duration"),
             r.get("release_date"),
             r.get("record_type"),
             r.get("fans"),
@@ -181,37 +185,36 @@ def save_batch(cur, results: list[dict]):
     ]
 
     execute_values(cur, """
-        INSERT INTO albums (id, title, genre_id, release_date, record_type, fans,
+        INSERT INTO albums (id, title, genre_id, duration, release_date, record_type, fans,
                             scrape_status, scrape_attempted_at)
         VALUES %s
         ON CONFLICT (id) DO UPDATE SET
             title               = COALESCE(EXCLUDED.title,        albums.title),
             genre_id            = COALESCE(EXCLUDED.genre_id,     albums.genre_id),
+            duration            = COALESCE(EXCLUDED.duration,     albums.duration),
             release_date        = COALESCE(EXCLUDED.release_date, albums.release_date),
             record_type         = COALESCE(EXCLUDED.record_type,  albums.record_type),
             fans                = COALESCE(EXCLUDED.fans,         albums.fans),
-            scrape_status       = EXCLUDED.scrape_status,
+            scrape_status       = CASE
+                                    WHEN albums.scrape_status = 'done' THEN 'done'
+                                    ELSE EXCLUDED.scrape_status
+                                  END,
             scrape_attempted_at = EXCLUDED.scrape_attempted_at
-    """, rows, template="(%s, %s, %s, %s, %s, %s, %s, NOW())")
+    """, rows, template="(%s, %s, %s, %s, %s, %s, %s, %s, NOW())")
 
 
 def save_album_tracks(cur, album_id: int, tracks: list[dict]):
-    """Upsert tracks + album_tracks với track_position đầy đủ."""
     if not tracks:
         return
 
-    # Deduplicate tracks theo id
-    track_rows = list({
-        t["id"]: (t["id"], t["title"], t["duration"], t["rank"])
-        for t in tracks
-    }.values())
-
+    # Seed track IDs
     execute_values(cur, """
-        INSERT INTO tracks (id, title, duration, rank)
+        INSERT INTO tracks (id)
         VALUES %s
         ON CONFLICT (id) DO NOTHING
-    """, track_rows)
+    """, [(t["id"],) for t in tracks])
 
+    # Quan hệ album → track + track_position
     execute_values(cur, """
         INSERT INTO album_tracks (album_id, track_id, track_position)
         VALUES %s

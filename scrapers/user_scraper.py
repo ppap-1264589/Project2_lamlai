@@ -2,11 +2,11 @@ import requests
 import time
 from config import USER_URL, USER_RATE_LIMIT_DELAY, HEADERS
 
-
+# DONE LOGIC
 def fetch_user(user_id: int) -> dict | None:
     resp = requests.get(USER_URL.format(id=user_id), timeout=5, headers=HEADERS)
     time.sleep(USER_RATE_LIMIT_DELAY)
-    data = resp.json()
+    data = resp.json(content_type=None)
     if "error" in data:
         return None
     return {
@@ -22,7 +22,7 @@ def fetch_user(user_id: int) -> dict | None:
         "is_kid":    data.get("is_kid"),
     }
 
-
+# DONE LOGIC
 def save_user(cur, user: dict):
     cur.execute("""
         INSERT INTO users (id, name, lastname, firstname, email, birthday, gender, country, lang, is_kid)

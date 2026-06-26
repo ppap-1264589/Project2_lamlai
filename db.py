@@ -47,6 +47,7 @@ def setup_tables(conn):
                 id                  BIGINT PRIMARY KEY,
                 title               TEXT,
                 genre_id            INT,
+                duration            INT,
                 release_date        DATE,
                 record_type         TEXT,
                 fans                INT,
