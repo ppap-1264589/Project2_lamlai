@@ -6,6 +6,11 @@ from config import TRACK_URL, HEADERS
 
 BATCH_SIZE = 49
 
+# Xử lý tình huống ngày không hợp lệ (năm = 0000)
+def _parse_date(val):
+    if not val or val.startswith("0000"):
+        return None
+    return val
 
 # ── Token Bucket rate limiter ─────────────────────────────────
 
@@ -70,7 +75,7 @@ async def fetch_track_detail(
                     "duration":            data.get("duration"),
                     "rank":                data.get("rank"),
                     "bpm":                 data.get("bpm"),
-                    "release_date":        data.get("release_date") if data.get("release_date") not in (None, "", "0000-00-00") else None,
+                    "release_date":        _parse_date(data.get("release_date")),
                     "available_countries": data.get("available_countries") or [],
                     "scrape_status":       "done",
                 }
@@ -142,16 +147,16 @@ def save_batch(cur, results: list[dict]):
         """, (r["id"], r.get("title"), r.get("duration"), r.get("rank"),
               r.get("bpm"), r.get("release_date"), r["scrape_status"]))
 
-    # Bulk insert available_countries — chỉ cho 'done'
+
+    # Bulk insert track_countries — chỉ cho 'done'
     country_rows = [
-        (r["id"], country)
+        (r["id"], r.get("available_countries") or [])
         for r in seen.values()
-        if r["scrape_status"] == "done"
-        for country in r.get("available_countries", [])
+        if r["scrape_status"] == "done" and r.get("available_countries")
     ]
     if country_rows:
         execute_values(cur, """
-            INSERT INTO track_available_countries (track_id, country)
+            INSERT INTO track_countries (track_id, countries)
             VALUES %s
-            ON CONFLICT (track_id, country) DO NOTHING
+            ON CONFLICT (track_id) DO NOTHING
         """, country_rows)

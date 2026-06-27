@@ -105,11 +105,15 @@ def setup_tables(conn):
         """)
 
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS track_available_countries (
-                track_id BIGINT REFERENCES tracks(id),
-                country  CHAR(2),
-                PRIMARY KEY (track_id, country)
+            CREATE TABLE IF NOT EXISTS track_countries (
+                track_id BIGINT PRIMARY KEY REFERENCES tracks(id),
+                countries TEXT[]
             )
+        """)
+
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_track_countries_gin
+            ON track_countries USING GIN (countries)
         """)
 
         cur.execute("""

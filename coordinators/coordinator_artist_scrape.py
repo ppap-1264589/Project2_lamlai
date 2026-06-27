@@ -73,7 +73,7 @@ def run_artist_scrape():
 
             except Exception as e:
                 if running:
-                    print(f"[Artist]   ⚠️  Lỗi ID {artist_id}: {e}", flush=True)
+                    print(f"[Artist]   ⚠️  Lỗi artist_id {artist_id}: {e}", flush=True)
                 conn.rollback()
 
             if success:

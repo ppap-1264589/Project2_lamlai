@@ -6,6 +6,12 @@ from config import ALBUM_URL, ALBUM_TRACKS, TRACK_DETAIL_REQUESTS_PER_SECOND, HE
 
 BATCH_SIZE = 49
 
+# Xử lý tình huống ngày không hợp lệ (năm = 0000)
+def _parse_date(val):
+    if not val or val.startswith("0000"):
+        return None
+    return val
+
 
 # ── Token Bucket rate limiter ─────────────────────────────────
 # DONE LOGIC
@@ -62,7 +68,7 @@ async def fetch_album_detail(
                         "title":         data.get("title"),
                         "genre_id":      data.get("genre_id"),
                         "duration":      data.get("duration"),
-                        "release_date":  data.get("release_date") if data.get("release_date") not in (None, "", "0000-00-00") else None,
+                        "release_date":  _parse_date(data.get("release_date")),
                         "record_type":   data.get("record_type"),
                         "fans":          data.get("fans"),
                         "scrape_status": "done",
