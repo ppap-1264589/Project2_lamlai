@@ -2,9 +2,9 @@ import asyncio
 import time
 import aiohttp
 from psycopg2.extras import execute_values
-from config import ALBUM_URL, ALBUM_TRACKS, TRACK_DETAIL_REQUESTS_PER_SECOND, HEADERS
+from config import ALBUM_URL, ALBUM_TRACKS, HEADERS
 
-BATCH_SIZE = 49
+BATCH_SIZE = 100
 
 # Xử lý tình huống ngày không hợp lệ (năm = 0000)
 def _parse_date(val):
@@ -44,6 +44,15 @@ async def fetch_album_detail(
     bucket: TokenBucket,
     sem: asyncio.Semaphore,
 ) -> dict:
+    """
+    scrape_status:
+      'done'        → API trả data hợp lệ
+      'not_necess'  → API tồn tại nhưng Deezer không có data quan trọng
+      'not_found'   → API xác nhận không tồn tại
+      'quota'       → API xác nhận đã đạt giới hạn request (PHẢI retry sau)
+      'conn_error'  → Lỗi thiết lập kết nối tức thời (PHẢI retry sau)
+      'error'       → Các loại lỗi khác (CÓ THỂ TÙY CHỌN retry sau)
+    """
     await bucket.acquire()
     async with sem:
         try:
@@ -55,31 +64,36 @@ async def fetch_album_detail(
                 if resp.status == 404:
                     return {"id": album_id, "scrape_status": "not_found"}
                 if resp.status == 429:
-                    return {"id": album_id, "scrape_status": "rlimit"}
+                    return {"id": album_id, "scrape_status": "quota"}
 
                 data = await resp.json(content_type=None)
+
+                if "error" in data:
+                    code = data["error"].get("code")
+                    if code == 4:
+                        return {"id": album_id, "scrape_status": "quota"}
+                    # code 800 hoặc lỗi khác → not_found
+                    return {"id": album_id, "scrape_status": "not_found"}
 
                 fields = ["title", "genre_id", "duration", "release_date", "record_type", "fans"]
                 has_data = any(data.get(f) not in (None, "") for f in fields)
 
-                if has_data:
-                    return {
-                        "id":            album_id,
-                        "title":         data.get("title"),
-                        "genre_id":      data.get("genre_id"),
-                        "duration":      data.get("duration"),
-                        "release_date":  _parse_date(data.get("release_date")),
-                        "record_type":   data.get("record_type"),
-                        "fans":          data.get("fans"),
-                        "scrape_status": "done",
-                    }
+                if not has_data:
+                    return {"id": album_id, "scrape_status": "not_necess"}
 
-                # Chỉ not_found khi API báo lỗi rõ ràng hoặc thực sự không có data
-                if "error" in data:
-                    return {"id": album_id, "scrape_status": "error"}
+                return {
+                    "id":            album_id,
+                    "title":         data.get("title"),
+                    "genre_id":      data.get("genre_id"),
+                    "duration":      data.get("duration"),
+                    "release_date":  _parse_date(data.get("release_date")),
+                    "record_type":   data.get("record_type"),
+                    "fans":          data.get("fans"),
+                    "scrape_status": "done",
+                }
 
-                return {"id": album_id, "scrape_status": "no_data"}
-
+        except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError):
+            return {"id": album_id, "scrape_status": "conn_error"}
         except Exception:
             return {"id": album_id, "scrape_status": "error"}
 
@@ -102,7 +116,9 @@ async def fetch_album_tracks(
     bucket: TokenBucket,
     sem: asyncio.Semaphore,
 ) -> dict:
-    """Cào /album/{id}/tracks, trả về list track với track_position đầy đủ."""
+    """Cào /album/{id}/tracks, trả về list track với track_position đầy đủ.
+    Thực ra hàm này là cào từ album_id cố định ra, nên không cần check quá kĩ status
+    """
     await bucket.acquire()
     async with sem:
         try:

@@ -40,7 +40,7 @@ BATCH_SIZE  = 50    # số request gửi song song mỗi lượt
 class TokenBucket:
     def __init__(self, rate: float):
         self.rate        = rate
-        self.tokens      = rate
+        self.tokens      = 0
         self.last_refill = time.perf_counter()
         self._lock       = asyncio.Lock()
 

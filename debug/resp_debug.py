@@ -110,7 +110,7 @@ async def check_album(session: aiohttp.ClientSession, sem: asyncio.Semaphore, al
                 elif body_summary.get("has_error_key"):
                     expected = "error"
                 else:
-                    expected = "no_data"
+                    expected = "not_necess"
 
                 mismatch = (db_status != expected)
 

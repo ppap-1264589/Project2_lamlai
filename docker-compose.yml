@@ -1,20 +1,22 @@
+# dấu x- để docker compose hiểu rằng đây là một template, 
+# và &scraper-base là một anchor để tham chiếu đến template này trong các service khác.
 x-scraper-base: &scraper-base
   build:
-    context: .
-    dockerfile: dockerfile
-  image: deezer_scraper:latest
-  dns:
+    context: . 
+    dockerfile: dockerfile #  build từ dockerfile ở thư mục hiện tại
+  image: deezer_scraper:latest # đặt tên image sau khi build
+  dns: #  dùng DNS của Google và Cloudflare thay vì DNS mặc định (tránh lỗi resolve domain khi gọi Deezer API)
     - 8.8.8.8
     - 1.1.1.1
-  depends_on:
+  depends_on: # chỉ khởi động sau khi postgres healthy (không chỉ started)
     postgres:
       condition: service_healthy
-  stop_grace_period: 60s
+  stop_grace_period: 60s # chờ tối đa 60s để container tự tắt sạch trước khi kill cứng
 
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: deezer_db
+    container_name: deezer_db # Đặt tên cố định cho container. Các container khác có thể kết nối DB qua hostname deezer_db thay vì IP động.
     environment:
       POSTGRES_DB: deezer
       POSTGRES_USER: admin
@@ -27,13 +29,16 @@ services:
       test: ["CMD-SHELL", "pg_isready -U admin -d deezer"]
       interval: 5s
       retries: 5
+    stop_grace_period: 60s
 
   scraper_artist:
     <<: *scraper-base
     container_name: deezer_scraper_artist
-    command: ["python", "main.py", "artist"]
+    command: ["python", "main.py", "artist"] # Override CMD trong dockerfile. 
+    # Dockerfile có: CMD ["python", "-u", "main.py"]
+    # Docker Compose ghi đè thành: python main.py artist
     environment:
-      ARTIST_REQUESTS_PER_SECOND: "6.5"
+      ARTIST_REQUESTS_PER_SECOND: "5"
     restart: unless-stopped
 
   scraper_user:
@@ -41,15 +46,24 @@ services:
     container_name: deezer_scraper_user
     command: ["python", "main.py", "user"]
     environment:
-      USER_REQUESTS_PER_SECOND: "3"
+      USER_REQUESTS_PER_SECOND: "5"
     restart: unless-stopped
 
+
+
+
+
+  # Các job riêng biệt (genre_detail, album_detail, track_detail) có thể được chạy độc lập với các job chính (artist, user).
+  # Chả hạn, kích hoạt bằng lệnh
+  # docker compose --profile jobs run -d scraper_album_detail 
+  # docker compose --profile jobs run -d scraper_genre_detail 
+  # docker compose --profile jobs run -d scraper_track_detail 
   scraper_genre_detail:
     <<: *scraper-base
     container_name: deezer_scraper_genre
     command: ["python", "main.py", "genre_detail"]
     environment:
-      GENRE_REQUESTS_PER_SECOND: "9.5"
+      GENRE_DETAIL_REQUESTS_PER_SECOND: "9.5"
     restart: "no"
     profiles: [jobs]
 
@@ -70,6 +84,8 @@ services:
       TRACK_DETAIL_REQUESTS_PER_SECOND: "9.5"
     restart: "no"
     profiles: [jobs]
+
+
 
   superset:
     build:

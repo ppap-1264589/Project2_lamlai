@@ -21,7 +21,7 @@ def main():
         "target",
         nargs="?",
         default=os.getenv("SCRAPER_TARGET", "artist"),
-        help="Coordinator to run: artist | user | genre | track_detail",
+        help="Coordinator to run: artist | user | genre_detail | album_detail | track_detail",
     )
     args = parser.parse_args()
     target = args.target.lower()

@@ -25,6 +25,28 @@ def run_user_scrape():
     user_id = last_id + 1
     running = True
 
+
+
+
+
+
+
+
+    # docker stop
+    #   → gửi SIGTERM
+    #   → handle_stop() chạy, running = False
+    #   → vòng lặp kết thúc sau batch hiện tại
+    #   → container thoát sạch ✓
+
+    # Ctrl+C gửi SIGINT
+    #  → handle_stop() chạy, running = False
+    #  → vòng lặp kết thúc sau batch hiện tại
+    #  → container thoát sạch ✓
+
+    # Nếu quá 60s vẫn chưa thoát:
+    #   → Docker gửi SIGKILL (không thể catch)
+    #   → kill cứng
+
     def handle_stop(signum, frame):
         nonlocal running
         print("\n[User] ⛔ Nhận tín hiệu dừng, đang chờ tác vụ hiện tại...", flush=True)
@@ -32,6 +54,10 @@ def run_user_scrape():
 
     signal.signal(signal.SIGTERM, handle_stop)
     signal.signal(signal.SIGINT, handle_stop)
+
+
+
+
 
     try:
         while running:

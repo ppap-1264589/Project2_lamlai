@@ -1,9 +1,9 @@
 import asyncio
 import time
 import aiohttp
-from config import GENRE_URL, TRACK_DETAIL_REQUESTS_PER_SECOND, HEADERS
+from config import GENRE_URL, HEADERS
 
-BATCH_SIZE = 49
+BATCH_SIZE = 100
 
 
 # ── Token Bucket rate limiter ─────────────────────────────────
@@ -30,21 +30,24 @@ class TokenBucket:
 
 
 # ── Async fetch ───────────────────────────────────────────────
-
+"""
+scrape_status:
+    'done'        → API trả data hợp lệ
+    'not_necess'  → API tồn tại nhưng Deezer không có data quan trọng
+    'not_found'   → API xác nhận không tồn tại
+    'quota'       → API xác nhận đã đạt giới hạn request (PHẢI retry sau)
+    'conn_error'  → Lỗi thiết lập kết nối tức thời (PHẢI retry sau)
+    'error'       → Các loại lỗi khác (CÓ THỂ TÙY CHỌN retry sau)
+"""
 async def fetch_genre(
     session: aiohttp.ClientSession,
     genre_id: int,
     bucket: TokenBucket,
     sem: asyncio.Semaphore,
 ) -> dict:
-    """
-    Luôn trả về dict với ít nhất {"id", "scrape_status"}.
-    scrape_status:
-      'done'      → API trả data hợp lệ
-      'not_found' → API xác nhận không tồn tại
-      'error'     → lỗi mạng / timeout → có thể retry sau
-    """
+
     await bucket.acquire()
+
     async with sem:
         try:
             async with session.get(
@@ -55,18 +58,28 @@ async def fetch_genre(
                 if resp.status == 404:
                     return {"id": genre_id, "scrape_status": "not_found"}
                 if resp.status == 429:
-                    return {"id": genre_id, "scrape_status": "rlimit"}
-                data = await resp.json()      
+                    return {"id": genre_id, "scrape_status": "quota"}
+
+                data = await resp.json(content_type=None)
 
                 if "error" in data:
-                    return {"id": genre_id, "scrape_status": "error"}
+                    code = data["error"].get("code")
+                    if code == 4:
+                        return {"id": genre_id, "scrape_status": "quota"}
+                    # code 800 hoặc lỗi khác → not_found
+                    return {"id": genre_id, "scrape_status": "not_found"}
+
                 if not data.get("name"):
-                    return {"id": genre_id, "scrape_status": "no_data"}
+                    return {"id": genre_id, "scrape_status": "not_necess"}
+
                 return {
                     "id":            genre_id,
                     "name":          data["name"],
                     "scrape_status": "done",
                 }
+
+        except (aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError):
+            return {"id": genre_id, "scrape_status": "conn_error"}
         except Exception:
             return {"id": genre_id, "scrape_status": "error"}
 

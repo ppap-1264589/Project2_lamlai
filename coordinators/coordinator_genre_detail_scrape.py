@@ -10,9 +10,9 @@ from scrapers.genre_detail_scraper import (
     save_genre,
     BATCH_SIZE,
 )
-from config import TRACK_DETAIL_REQUESTS_PER_SECOND
+from config import GENRE_DETAIL_REQUESTS_PER_SECOND
 
-CONCURRENCY = 49
+CONCURRENCY = 50
 
 
 def run_genre_detail_scrape():
@@ -24,11 +24,15 @@ async def _run():
     setup_tables(conn)
     cur = conn.cursor()
 
+    # stop_event.is_set() == False  →  chưa nhận tín hiệu dừng
+    # stop_event.set()              →  bật cờ
+    # stop_event.is_set() == True   →  đã nhận tín hiệu dừng
+    # stop_event.wait()             →  coroutine chờ đến khi cờ được bật
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
 
     def handle_stop():
-        print("\n[Genre] ⛔ Nhận tín hiệu dừng...")
+        print("\n[Genre] ⛔ Nhận tín hiệu dừng...", flush=True)
         stop_event.set()
 
     import signal
@@ -40,16 +44,18 @@ async def _run():
         conn.commit()
 
         pending = count_pending_genres(cur)
-        print(f"[Genre] pending: {pending} | synced mới: {inserted}")
+        print(f"[Genre] pending: {pending} | synced mới: {inserted}", flush=True)
 
         if pending == 0:
-            print("[Genre] ✅ Không có gì cần cào, thoát.")
+            print("[Genre] ✅ Không có gì cần cào, thoát.", flush=True)
             return
 
-        bucket = TokenBucket(TRACK_DETAIL_REQUESTS_PER_SECOND)
+        # bucket — kiểm soát tốc độ theo thời gian
+        # sem — giới hạn số request đồng thời
+        bucket = TokenBucket(GENRE_DETAIL_REQUESTS_PER_SECOND)
         sem    = asyncio.Semaphore(CONCURRENCY)
 
-        done_count = not_found = error_count = 0
+        done_count = not_found = not_necess = quota = conn_error = error_count = 0
         completed_normally = False
 
         async with aiohttp.ClientSession() as session:
@@ -74,6 +80,10 @@ async def _run():
                     except asyncio.CancelledError:
                         pass
 
+
+                # Xử lý trường hợp hy hữu
+                # Task fetch_task có thể đã hoàn thành nhưng stop_event.is_set() == True, 
+                # (Trường hợp cả hai task hoàn thành gần như cùng một lúc và stop_event được set trước khi fetch_task.result() được gọi)
                 if stop_event.is_set():
                     if fetch_task in done and not fetch_task.cancelled():
                         try:
@@ -89,20 +99,37 @@ async def _run():
                 for r in results:
                     _log_genre(r)
                     save_genre(cur, r)
-                done_count, not_found, error_count = _tally(results, done_count, not_found, error_count)
+                    done_count, not_found, not_necess, quota, conn_error, error_count = _tally(
+                        r, done_count, not_found, not_necess, quota, conn_error, error_count
+                    )
                 conn.commit()
 
-                print(f"[Genre] batch xong | done: {done_count} | not_found: {not_found} | error: {error_count}")
+                print(
+                    f"[Genre] batch xong | "
+                    f"done={done_count} | not_found={not_found} | not_necess={not_necess} | "
+                    f"quota={quota} | conn_error={conn_error} | error={error_count}",
+                    flush=True,
+                )
 
         if completed_normally:
             conn.commit()
-            print(f"[Genre] ✅ Hoàn thành toàn bộ | done: {done_count} | not_found: {not_found} | error: {error_count}")
+            print(
+                f"[Genre] ✅ Hoàn thành | "
+                f"done={done_count} | not_found={not_found} | not_necess={not_necess} | "
+                f"quota={quota} | conn_error={conn_error} | error={error_count}",
+                flush=True,
+            )
         else:
-            print(f"[Genre] 💾 Dừng giữa chừng | done: {done_count} | not_found: {not_found} | error: {error_count}")
+            print(
+                f"[Genre] 💾 Dừng giữa chừng | "
+                f"done={done_count} | not_found={not_found} | not_necess={not_necess} | "
+                f"quota={quota} | conn_error={conn_error} | error={error_count}",
+                flush=True,
+            )
 
     except Exception as e:
         conn.rollback()
-        print(f"[Genre] ⚠️  Lỗi: {e}")
+        print(f"[Genre] ⚠️  Lỗi: {e}", flush=True)
         raise
 
     finally:
@@ -110,21 +137,30 @@ async def _run():
         conn.close()
 
 
-def _tally(results: list[dict], done: int, not_found: int, error: int) -> tuple[int, int, int]:
-    for r in results:
-        status = r["scrape_status"]
-        if status == "done":
-            done      += 1
-        elif status == "not_found":
-            not_found += 1
-        else:
-            error     += 1
-    return done, not_found, error
+def _tally(r: dict, done: int, not_found: int, not_necess: int,
+           quota: int, conn_error: int, error: int) -> tuple:
+    s = r["scrape_status"]
+    if   s == "done":       done       += 1
+    elif s == "not_found":  not_found  += 1
+    elif s == "not_necess": not_necess += 1
+    elif s == "quota":      quota      += 1
+    elif s == "conn_error": conn_error += 1
+    else:                   error      += 1
+    return done, not_found, not_necess, quota, conn_error, error
 
 
 def _log_genre(r: dict):
     status = r["scrape_status"]
+    gid    = r["id"]
     if status == "done":
-        print(f"[Genre] [{r['id']}] {r.get('name')}")
+        print(f"[Genre] ✓ [{gid}] {r.get('name')}", flush=True)
+    elif status == "not_found":
+        print(f"[Genre] ~ [{gid}] not_found", flush=True)
+    elif status == "not_necess":
+        print(f"[Genre] ~ [{gid}] not_necess", flush=True)
+    elif status == "quota":
+        print(f"[Genre] ⚠️  [{gid}] quota — sẽ retry sau", flush=True)
+    elif status == "conn_error":
+        print(f"[Genre] ⚠️  [{gid}] conn_error — sẽ retry sau", flush=True)
     else:
-        print(f"[Genre] [{r['id']}] {status}")
+        print(f"[Genre] ✗ [{gid}] {status}", flush=True)

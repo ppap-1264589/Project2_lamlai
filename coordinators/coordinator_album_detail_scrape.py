@@ -11,10 +11,9 @@ from scrapers.album_detail_scraper import (
     save_album_tracks,
     BATCH_SIZE,
 )
-from config import TRACK_DETAIL_REQUESTS_PER_SECOND
+from config import ALBUM_DETAIL_REQUESTS_PER_SECOND
 
-PROGRESS_KEY = "album_detail"
-CONCURRENCY  = 49
+CONCURRENCY  = 50
 
 
 def run_album_detail_scrape():
@@ -39,21 +38,21 @@ async def _run():
 
     try:
         pending = count_pending_albums(cur)
-        print(f"[AlbumDetail] pending: {pending}", flush=True)   # ← bỏ "tiếp từ id >"
+        print(f"[AlbumDetail] pending: {pending}", flush=True)
 
         if pending == 0:
             print("[AlbumDetail] ✅ Không có gì cần cào, thoát.", flush=True)
             return
 
-        bucket = TokenBucket(TRACK_DETAIL_REQUESTS_PER_SECOND)
+        bucket = TokenBucket(ALBUM_DETAIL_REQUESTS_PER_SECOND)
         sem    = asyncio.Semaphore(CONCURRENCY)
 
-        done_count = not_found = error_count = 0
+        done_count = not_found = not_necess = quota = conn_error = error_count = 0
         completed_normally = False
 
         async with aiohttp.ClientSession() as session:
             while not stop_event.is_set():
-                album_ids = get_pending_album_ids(cur, BATCH_SIZE)   # ← bỏ last_id
+                album_ids = get_pending_album_ids(cur, BATCH_SIZE)
                 if not album_ids:
                     completed_normally = True
                     break
@@ -91,15 +90,14 @@ async def _run():
                     break
 
                 results = fetch_task.result()
-
                 save_batch(cur, results)
 
                 for r in results:
-                    if   r["scrape_status"] == "done":      done_count  += 1
-                    elif r["scrape_status"] == "not_found": not_found   += 1
-                    else:                                   error_count += 1
                     _log_album(r)
-
+                    done_count, not_found, not_necess, quota, conn_error, error_count = _tally(
+                        r, done_count, not_found, not_necess, quota, conn_error, error_count
+                    )
+                    
                 done_ids = [int(r["id"]) for r in results if r["scrape_status"] == "done"]
                 if done_ids:
                     print(f"[AlbumDetail] fetch tracks cho {len(done_ids)} album...", flush=True)
@@ -107,11 +105,12 @@ async def _run():
                     for tr in track_results:
                         save_album_tracks(cur, tr["album_id"], tr["tracks"])
 
-                conn.commit()   # ← bỏ _save_progress
+                conn.commit()
 
                 print(
                     f"[AlbumDetail] batch xong | "
-                    f"done: {done_count} | not_found: {not_found} | error: {error_count}",
+                    f"done={done_count} | not_found={not_found} | not_necess={not_necess} | "
+                    f"quota={quota} | conn_error={conn_error} | error={error_count}",
                     flush=True,
                 )
 
@@ -119,13 +118,15 @@ async def _run():
             conn.commit()
             print(
                 f"[AlbumDetail] ✅ Hoàn thành | "
-                f"done: {done_count} | not_found: {not_found} | error: {error_count}",
+                f"done={done_count} | not_found={not_found} | not_necess={not_necess} | "
+                f"quota={quota} | conn_error={conn_error} | error={error_count}",
                 flush=True,
             )
         else:
             print(
                 f"[AlbumDetail] 💾 Dừng giữa chừng | "
-                f"done: {done_count} | not_found: {not_found} | error: {error_count}",
+                f"done={done_count} | not_found={not_found} | not_necess={not_necess} | "
+                f"quota={quota} | conn_error={conn_error} | error={error_count}",
                 flush=True,
             )
 
@@ -141,10 +142,29 @@ async def _run():
 
 # ── helpers ───────────────────────────────────────────────────
 
+def _tally(r: dict, done: int, not_found: int, not_necess: int,
+           quota: int, conn_error: int, error: int) -> tuple:
+    s = r["scrape_status"]
+    if   s == "done":       done       += 1
+    elif s == "not_found":  not_found  += 1
+    elif s == "not_necess": not_necess += 1
+    elif s == "quota":      quota      += 1
+    elif s == "conn_error": conn_error += 1
+    else:                   error      += 1
+    return done, not_found, not_necess, quota, conn_error, error
+
 def _log_album(r: dict):
     status = r["scrape_status"]
     aid    = r["id"]
     if status == "done":
-        print(f"[AlbumDetail] [{aid}] {r.get('title')}", flush=True)
+        print(f"[AlbumDetail] ✓ [{aid}] {r.get('title')}", flush=True)
+    elif status == "not_found":
+        print(f"[AlbumDetail] ~ [{aid}] not_found", flush=True)
+    elif status == "not_necess":
+        print(f"[AlbumDetail] ~ [{aid}] not_necess", flush=True)
+    elif status == "quota":
+        print(f"[AlbumDetail] ⚠️  [{aid}] quota — sẽ retry sau", flush=True)
+    elif status == "conn_error":
+        print(f"[AlbumDetail] ⚠️  [{aid}] conn_error — sẽ retry sau", flush=True)
     else:
-        print(f"[AlbumDetail] [{aid}] {status}", flush=True)
+        print(f"[AlbumDetail] ✗ [{aid}] {status}", flush=True)
