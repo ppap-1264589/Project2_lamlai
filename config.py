@@ -43,5 +43,13 @@ GENRE_DETAIL_RATE_LIMIT_DELAY = 1 / GENRE_DETAIL_REQUESTS_PER_SECOND
 TRACK_DETAIL_RATE_LIMIT_DELAY = 1 / TRACK_DETAIL_REQUESTS_PER_SECOND
 ALBUM_DETAIL_RATE_LIMIT_DELAY = 1 / ALBUM_DETAIL_REQUESTS_PER_SECOND
 
-# Job scraper sleep interval (seconds) khi hết việc
-JOB_SLEEP_SECONDS = int(os.getenv("JOB_SLEEP_SECONDS", "1800"))  # 30 phút
+
+
+# BATCH_SIZE=100  →  tạo 100 task cùng lúc
+#                         ↓
+# sem=50          →  chỉ 50 cái được gửi request đồng thời
+#                         ↓
+# bucket=10/s     →  trong 50 cái đó, mỗi giây chỉ 10 cái
+#                    được acquire token để thực sự gửi đi
+BATCH_SIZE = 100
+CONCURRENCY = 50

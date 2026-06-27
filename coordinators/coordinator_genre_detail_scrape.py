@@ -8,11 +8,15 @@ from scrapers.genre_detail_scraper import (
     get_pending_genre_ids,
     fetch_batch,
     save_genre,
-    BATCH_SIZE,
 )
-from config import GENRE_DETAIL_REQUESTS_PER_SECOND
 
-CONCURRENCY = 50
+# BATCH_SIZE=100  →  tạo 100 task cùng lúc
+#                         ↓
+# sem=50          →  chỉ 50 cái được gửi request đồng thời
+#                         ↓
+# bucket=10/s     →  trong 50 cái đó, mỗi giây chỉ 10 cái
+#                    được acquire token để thực sự gửi đi
+from config import GENRE_DETAIL_REQUESTS_PER_SECOND, CONCURRENCY, BATCH_SIZE
 
 
 def run_genre_detail_scrape():

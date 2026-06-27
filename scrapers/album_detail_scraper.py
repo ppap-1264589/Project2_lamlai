@@ -4,8 +4,6 @@ import aiohttp
 from psycopg2.extras import execute_values
 from config import ALBUM_URL, ALBUM_TRACKS, HEADERS
 
-BATCH_SIZE = 100
-
 # Xử lý tình huống ngày không hợp lệ (năm = 0000)
 def _parse_date(val):
     if not val or val.startswith("0000"):

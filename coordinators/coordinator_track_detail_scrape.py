@@ -7,12 +7,8 @@ from scrapers.track_detail_scraper import (
     get_pending_track_ids,
     fetch_batch,
     save_batch,
-    BATCH_SIZE,
 )
-from config import TRACK_DETAIL_REQUESTS_PER_SECOND
-
-CONCURRENCY = 50
-
+from config import TRACK_DETAIL_REQUESTS_PER_SECOND, CONCURRENCY, BATCH_SIZE
 
 def run_track_detail_scrape():
     asyncio.run(_run())

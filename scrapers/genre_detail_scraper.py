@@ -3,8 +3,6 @@ import time
 import aiohttp
 from config import GENRE_URL, HEADERS
 
-BATCH_SIZE = 100
-
 
 # ── Token Bucket rate limiter ─────────────────────────────────
 

@@ -9,12 +9,8 @@ from scrapers.album_detail_scraper import (
     fetch_tracks_batch,
     save_batch,
     save_album_tracks,
-    BATCH_SIZE,
 )
-from config import ALBUM_DETAIL_REQUESTS_PER_SECOND
-
-CONCURRENCY  = 50
-
+from config import ALBUM_DETAIL_REQUESTS_PER_SECOND, CONCURRENCY, BATCH_SIZE
 
 def run_album_detail_scrape():
     asyncio.run(_run())
