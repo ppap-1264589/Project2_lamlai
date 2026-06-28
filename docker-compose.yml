@@ -38,7 +38,7 @@ services:
     # Dockerfile có: CMD ["python", "-u", "main.py"]
     # Docker Compose ghi đè thành: python main.py artist
     environment:
-      ARTIST_REQUESTS_PER_SECOND: "5"
+      ARTIST_REQUESTS_PER_SECOND: "100"
     restart: unless-stopped
 
   scraper_user:
@@ -46,7 +46,7 @@ services:
     container_name: deezer_scraper_user
     command: ["python", "main.py", "user"]
     environment:
-      USER_REQUESTS_PER_SECOND: "5"
+      USER_REQUESTS_PER_SECOND: "100"
     restart: unless-stopped
 
 

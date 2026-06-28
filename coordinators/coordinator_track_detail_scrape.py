@@ -101,7 +101,6 @@ async def _run():
                 )
 
         if completed_normally:
-            conn.commit()
             print(
                 f"[TrackDetail] ✅ Hoàn thành | "
                 f"done={done_count} | not_found={not_found} | not_necess={not_necess} | "

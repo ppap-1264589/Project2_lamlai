@@ -71,7 +71,6 @@ def setup_tables(conn):
             CREATE TABLE IF NOT EXISTS artist_albums (
                 artist_id BIGINT REFERENCES artists(id),
                 album_id  BIGINT REFERENCES albums(id),
-                role      TEXT,
                 PRIMARY KEY (artist_id, album_id)
             )
         """)

@@ -83,11 +83,12 @@ def run_artist_scrape():
                         save_album_id(cur, aid)
                         save_artist_album(cur, artist_id, aid)
 
-                    conn.commit()
-
                     if stop_requested:
-                        print(f"[Artist] ⛔ Dừng giữa chừng tại ID {artist_id} — sẽ cào lại lần sau.", flush=True)
+                        conn.rollback()
+                        print(f"[Artist] ⛔ Dừng giữa chừng tại ID {artist_id} — album chưa đủ, sẽ cào lại lần sau.", flush=True)
                         break
+                    else:
+                        conn.commit()
 
                     session_found += 1
                     total_db += 1
