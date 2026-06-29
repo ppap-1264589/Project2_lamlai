@@ -68,6 +68,9 @@ async def _run():
                     except asyncio.CancelledError:
                         pass
 
+                # Xử lý trường hợp hy hữu
+                # Task fetch_task có thể đã hoàn thành nhưng stop_event.is_set() == True, 
+                # (Trường hợp cả hai task hoàn thành gần như cùng một lúc và stop_event được set trước khi fetch_task.result() được gọi)
                 if stop_event.is_set():
                     if fetch_task in done and not fetch_task.cancelled():
                         try:

@@ -59,7 +59,9 @@ async def fetch_genre(
                     return {"id": genre_id, "scrape_status": "quota"}
 
                 data = await resp.json(content_type=None)
-
+                # Chấp nhận tất cả các content-type, kể cả text/html
+                # vì Deezer đôi khi trả về content-type không chuẩn
+    
                 if "error" in data:
                     code = data["error"].get("code")
                     if code == 4:
